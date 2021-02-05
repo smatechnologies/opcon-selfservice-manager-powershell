@@ -1,16 +1,26 @@
-# Project Name
-Project description
+# OpConsole Self Service Manager
+This terminal program is designed to help move Self Service buttons between OpCon environments.  Future releases will include command line optios for running from OpCon, moving all the buttons in a selected Category (as well as creating the Category in the destination), and options to "transform" certain fields like Roles/Category.
+
+# Prerequisites
+* Powershell 7+
+* Powershell Module - Microsoft.PowerShell.ConsoleGuiTools 
+* OpCon environments on Release 17+
+* OpCon license with access to OpCon API
+
+# Instructions
+To install the Microsoft.PowerShell.ConsoleGuiTools modules do the following:
+```
+Install-Module Microsoft.PowerShell.ConsoleGuiTools 
+```
+There are parameters for the script but will only be useable in a future release.
+```
+pwsh OpConsole_SS_Manager.ps1
+```
 
 # Disclaimer
 No Support and No Warranty are provided by SMA Technologies for this project and related material. The use of this project's files is on your own risk.
 
 SMA Technologies assumes no liability for damage caused by the usage of any of the files offered here via this Github repository.
-
-# Prerequisites
-
-
-# Instructions
-
 
 # License
 Copyright 2019 SMA Technologies
