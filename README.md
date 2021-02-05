@@ -1,6 +1,8 @@
 # OpConsole Self Service Manager
 This terminal program is designed to help move Self Service buttons between OpCon environments.  Future releases will include command line optios for running from OpCon, moving all the buttons in a selected Category (as well as creating the Category in the destination), and options to "transform" certain fields like Roles/Category.
 
+![OpConsole](documentation/imgs/OpConsoleSS.JPG)
+
 # Prerequisites
 * Powershell 7+
 * Powershell Module - Microsoft.PowerShell.ConsoleGuiTools 
@@ -12,10 +14,17 @@ To install the Microsoft.PowerShell.ConsoleGuiTools modules do the following:
 ```
 Install-Module Microsoft.PowerShell.ConsoleGuiTools 
 ```
-There are parameters for the script but will only be useable in a future release.
+Launch the terminal like this:
 ```
 pwsh OpConsole_SS_Manager.ps1
 ```
+After launching use F2 (or your mouse) and navigate to Menu -> Connect to OpCon
+![Login](documentation/imgs/OpConsoleSSLogin.JPG)
+
+Once authenticated you can then select the button checkbox at the bottom and see the buttons in your "source" environment that you have access to move:
+![Buttons](documentation/imgs/OpConsoleSSButtons.JPG)
+
+You can then select the "SEND" option to copy the button to the other OpCon environment!  The role for the button will default to "ocadm" but any existing categories will carry over if they exist in the destination OpCon environment.  Future releases may have the option to also create the role/s and/or category.
 
 # Disclaimer
 No Support and No Warranty are provided by SMA Technologies for this project and related material. The use of this project's files is on your own risk.
