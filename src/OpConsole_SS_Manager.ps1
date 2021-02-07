@@ -1,10 +1,10 @@
 <#
 The purpose of this script is to move a button from one OpCon Self Service environment to another
 
-Future releases will add an option to run from a command line (so it could be run inside OpCon)
-as well as the ability to move all the buttons in a category as well as create new categories.
+Future releases will the ability to move all the buttons in a category as well as create new categories.
 
-v1.0
+v1.1 - Added logic/options to run from a command line.  Also various bug fixes.
+v1.0 - Initial release
 #>
 param(
     $srcUrl, # URL to Source OpCon API ie https://<opconserver>:<port>
@@ -16,7 +16,7 @@ param(
     $destPassword, # Used for API authentication, recommend passing in as an encrypted global property
     $srcToken, # Used to specify an existing API token
     $destToken, # Used to specify an existing API token
-    [Switch]$commandline # Switch option so the program can be run from an OpCon job
+    [Switch]$cli # Switch option so the program can be run from an OpCon job
 )
 
 #Get user/app token
@@ -36,6 +36,29 @@ function OpCon_Login($url,$user,$password)
     }
     catch [Exception]
     { [Terminal.Gui.MessageBox]::ErrorQuery("Failed", $_.Exception.Message ) }
+
+    return $apiuser
+}
+
+function OpCon_LoginCL($url,$user,$password)
+{
+    #Build body
+    $body = @{"user" = @{"loginName" = $user;
+                         "password" = $password;
+                        };
+              "tokentype" = @{"type" = "User"}
+             }
+
+    try
+    { 
+        $apiuser = Invoke-Restmethod -Method POST -Uri ($url + "/api/tokens") -Body ($body | ConvertTo-Json -Depth 7) -ContentType "application/json"  
+        Write-Host "Authenticated to $url!"
+    }
+    catch [Exception]
+    { 
+        Write-Host $_
+        Exit 3    
+    }
 
     return $apiuser
 }
@@ -60,6 +83,31 @@ function OpCon_GetServiceRequest($url,$token,$id,$button)
     }
     catch [Exception]
     { [Terminal.Gui.MessageBox]::ErrorQuery("Failed", $_.Exception.Message ) }
+
+    return $getbutton
+}
+
+function OpCon_GetServiceRequestCL($url,$token,$id,$button)
+{
+    try 
+    {
+        if($id)
+        {  $getbutton = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequests/" + $id) -Headers @{"authorization" = $token} -ContentType "application/json" }
+        elseif($button)
+        {
+            $buttonDetails = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequests?name=" + $button) -Headers @{"authorization" = $token} -ContentType "application/json"
+
+            if($buttonDetails -ne "")
+            { $getbutton = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequests/" + $buttonDetails[0].id) -Headers @{"authorization" = $token} -ContentType "application/json" }
+            else { Write-Host "No button found with name $button"}
+        }
+        else { $getbutton = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequests") -Headers @{"authorization" = $token} -ContentType "application/json" }
+    }
+    catch [Exception]
+    { 
+        Write-Host $_ 
+        Exit 3
+    }
 
     return $getbutton
 }
@@ -95,9 +143,52 @@ function OpCon_CreateServiceRequest($url,$token,$name,$doc,$html,$details,$disab
         }
     }
     catch [Exception]
-    { $object | ConvertTo-Json -Depth 5 | Out-Host;[Terminal.Gui.MessageBox]::ErrorQuery("Failed", $_.Exception.Message ) }
+    { 
+        Write-Host $_
+        [Terminal.Gui.MessageBox]::ErrorQuery("Failed Adding Button", $_.Exception.Message ) 
+        $failed = "failed"
+    }
 
-    [Terminal.Gui.MessageBox]::Query("Button added to "+$url, "***Success***",@("Close") )
+    if($failed -ne "failed")
+    { [Terminal.Gui.MessageBox]::Query("Button added to "+$url, "***Success***",@("Close") ) }
+
+    return $servicerequest
+}
+
+function OpCon_CreateServiceRequestCL($url,$token,$name,$doc,$html,$details,$disable,$hide,$category,$categoryName,$roles,$object)
+{
+    try 
+    {
+        if($object)
+        { $servicerequest = Invoke-Restmethod -Method POST -Uri ($url + "/api/ServiceRequests") -Headers @{"authorization" = $token} -Body ($object | ConvertTo-Json -Depth 5) -ContentType "application/json" }
+        else 
+        {
+            # CONVERT TO OBJECT @{...}
+            if($categoryName)
+            { $categoryObject = OpCon_GetServiceRequestCategoryCL -url $url -token $token -category "$category" }
+            elseif($category)
+            { $categoryObject = $category }
+
+            #Build Service Request object
+            $body = @{
+                    "name" = $name;
+                    "documentation" = $doc;
+                    "details" = $details;
+                    "disableRule" = $disable;
+                    "hideRule" = $hide;
+                    "serviceRequestCategory" = $categoryObject;
+                    "roles" = @($roles) # This is an array of role objects @{id,name} I have a function for getting roles if needed
+                    }
+            $servicerequest = Invoke-Restmethod -Method POST -Uri ($url + "/api/ServiceRequests") -Headers @{"authorization" = $token} -Body ($body | ConvertTo-Json -Depth 5) -ContentType "application/json"
+        }
+    }
+    catch [Exception]
+    { 
+        Write-Host $_
+        Exit 3
+    }
+
+    Write-Host "Button added to "+$url
 
     return $servicerequest
 }
@@ -123,6 +214,34 @@ function OpCon_GetServiceRequestCategory($url,$token,$category,$id)
     }
     catch [Exception]
     { [Terminal.Gui.MessageBox]::ErrorQuery("Failed", $_.Exception.Message ) }
+
+    return $categories
+}
+
+#Function to get a Service Request category/categories
+function OpCon_GetServiceRequestCategoryCL($url,$token,$category,$id)
+{  
+    try
+    {
+        if($category)
+        { 
+            $getCategory = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequestCategories?name=" + $category) -Headers @{"authorization" = $token} -ContentType "application/json" 
+
+            if($getCategory -ne "")
+            { $categories = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequestCategories/" + $getCategory[0].id) -Headers @{"authorization" = $token} -ContentType "application/json"  }
+            else 
+            { Write-Host "Category $category not found" }
+        }
+        elseif($id)
+        { $categories = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequestCategories/" + $id) -Headers @{"authorization" = $token} -ContentType "application/json" }
+        else 
+        { $categories = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequestCategories") -Headers @{"authorization" = $token} -ContentType "application/json" }
+    }
+    catch [Exception]
+    { 
+        Write-Host $_  
+        Exit 3
+    }
 
     return $categories
 }
@@ -269,151 +388,33 @@ function BuildLoginDialog()
 }
 #endregion
 
-#  $srcButton.roles = @(@{"id" = 5;"name" = "API Test"}) 
+#----------------------------------------------------------------------------------------------------------------------------------
 
-Import-Module Microsoft.PowerShell.ConsoleGuiTools 
-$module = (Get-Module Microsoft.PowerShell.ConsoleGuiTools -List).ModuleBase
-Add-Type -Path (Join-path $module Terminal.Gui.dll)
-[Terminal.Gui.Application]::Init()
+# Verify PS version is at least 7
+if($PSVersionTable.PSVersion.Major -ge 7)
+{
+    #Skip self signed certificates
+    OpCon_SkipCerts
+}
+else 
+{
+    Write-Host "Powershell Version 7.0 or greater required!"
+    Exit 1
+}
 
-#Skip self signed certificates
-OpCon_SkipCerts
-
-#Setup button array (for category button moves)
-#$moveButtonsArray = @()
-
-#Application
-$Window = [Terminal.Gui.Window]::new()
-$Window.Title = "OpConsole - Self Service Manager"
-$global:showHelp = 1
-$Window.add_KeyPress({ param($arg) 
-                       if($arg.KeyEvent.Key.ToString() -eq "F1")
-                       { 
-                           if($global:showHelp -eq 1)
-                           {
-                               $global:showHelp = 0
-                               Start-Process https://help.smatechnologies.com
-                           }
-                           else{ $global:showHelp = 1 }
-                       }
-                       elseif($arg.KeyEvent.Key.ToString() -eq "F2")
-                       { $MenuBar.OpenMenu() }
-                    })
-[Terminal.Gui.Application]::Top.Add($Window)
-
-#Menu
-$MenuItemConnect = [Terminal.Gui.MenuItem]::new("_Connect to OpCon", "", { BuildLoginDialog } )
-$MenuItemOpConDocs = [Terminal.Gui.MenuItem]::new("_OpCon Documentation (F1)", "", { Start-Process https://help.smatechnologies.com } )
-$MenuItemOpConsole = [Terminal.Gui.MenuItem]::new("_About", "", { [Terminal.Gui.MessageBox]::Query("OpConsole Documentation", "Version 1.0`nWritten by Bruce Jernell`n`nCheck the project on github:`nhttps://tinyurl.com/135bucas", @("Close")) } )
-$MenuItemExit = [Terminal.Gui.MenuItem]::new("_Exit (Ctrl + Q)", "", { Exit })
-$MenuBarItemMenu = [Terminal.Gui.MenuBarItem]::new("Menu (F2)", @($MenuItemConnect,$MenuItemExit))
-$MenuBarItemHelp = [Terminal.Gui.MenuBarItem]::new("Help",@($MenuItemOpConsole,$MenuItemOpConDocs))
-$MenuBar = [Terminal.Gui.MenuBar]::new(@($MenuBarItemMenu,$MenuBarItemHelp))
-$Window.Add($MenuBar)
-
-#Frame 1
-$Frame1 = [Terminal.Gui.FrameView]::new()
-$Frame1.Width = [Terminal.Gui.Dim]::Percent(35)
-$Frame1.Height = [Terminal.Gui.Dim]::Percent(90)
-$Frame1.Y = [Terminal.Gui.Pos]::Bottom($MenuBar)
-$Frame1.Title = "Source selection"
-$Window.Add($Frame1)
-
-#Frame 2
-$Frame2 = [Terminal.Gui.FrameView]::new()
-$Frame2.Width = [Terminal.Gui.Dim]::Percent(65)
-$Frame2.Height = [Terminal.Gui.Dim]::Percent(90)
-$Frame2.X = [Terminal.Gui.Pos]::Right($Frame1)
-$Frame2.Y = [Terminal.Gui.Pos]::Bottom($MenuBar)
-$Frame2.Title = "Additional information"
-$Window.Add($Frame2)
-
-#Frame 1 content
-$ListView = [Terminal.Gui.ListView]::new()
-$ListView.Width = [Terminal.Gui.Dim]::Fill()
-$ListView.Height = [Terminal.Gui.Dim]::Fill()
-$ListView.add_SelectedItemChanged( { 
-    if($Checkbox.checked -eq $true)
+# Checks to see whether to run the command line or gui version
+if($cli)
+{
+    if(((($srcUser -and $srcPassword) -or $srcToken) -and $srcURL) -and ((($destUser -and $destPassword) -or $destToken) -and $destURL))
     {
-        if(($global:srcToken -ne "Token ") -and ($global:srcToken))
-        {
-            #$global:selectedButton = OpCon_GetServiceRequest -url $global:srcUrl -token $global:srcToken -id ($global:buttons[$ListView.SelectedItem].id)
-            #$roles = ""
-            #$global:selectedButton.roles | ForEach-Object{ $roles = $roles + $_.name + ", " }
-            #$global:buttons[$ListView.SelectedItem].roles | ForEach-Object{ $roles = $roles + $_.name + ", " }
+        if(!$srcToken)
+        { $srcToken = "Token " + (OpCOn_LoginCL -url $srcURL -user $srcUser -password $srcPassword).id }
 
-            if(($global:buttons[$ListView.SelectedItem].html).Length -gt 200)
-            { $buttonHTML = ($global:buttons[$ListView.SelectedItem].html).SubString(0,200) }
-            else 
-            { $buttonHTML = $global:buttons[$ListView.SelectedItem].html }
+        if(!$destToken)
+        { $destToken = "Token " + (OpCOn_LoginCL -url $destURL -user $destUser -password $destPassword).id }
 
-            $Content2.Text = "Name: " + $global:buttons[$ListView.SelectedItem].name + 
-                        "`n`nDocumentation: " + $global:buttons[$ListView.SelectedItem].documentation +
-                        "`n`nHTML: " + $buttonHTML +
-                        "`n`nCategory: " + $global:buttons[$ListView.SelectedItem].serviceRequestCategory.name #+ 
-                        #"`n`nRoles: " + $roles.TrimEnd(", ")
-
-            # Only add the button if buttons have been received
-            $Button.Visible = $true
-        }
-        else 
-        { 
-            $Checkbox.Checked = $false
-            [Terminal.Gui.MessageBox]::ErrorQuery("Error - Not Authenticated to OpCon", "Go to Menu -> Connect to OpCon`nPress ESC to close this window") 
-        }
-
-    }
-    elseif($Checkbox2.checked -eq $true)
-    {
-        if(($global:srcToken -ne "Token ") -and ($global:srcToken))
-        {
-            $buttonsByCategory = ($global:buttons).Where({ $_.serviceRequestCategory.name -Match $global:categories[$ListView.SelectedItem].name })
-            $catButtons = ""
-            $buttonsByCategory | ForEach-Object{ $catButtons = $catButtons + $_.name + ", " }
-            $Content2.Text = "Category: " + $global:categories[$ListView.SelectedItem].name + 
-                             "`n`nCategory Color: " + $global:categories[$ListView.SelectedItem].color +
-                             "`n`nButtons: " + $catButtons.TrimEnd(", ")
-        }
-        else 
-        { 
-            $Checkbox2.Checked = $false
-            [Terminal.Gui.MessageBox]::ErrorQuery("Error - Not Authenticated to OpCon", "Go to Menu -> Connect to OpCon`nPress ESC to close this window") 
-        }
-        # Only add the button if buttons have been received
-        #$CategoryButton.Visible = $true
-    }
-} )
-$Frame1.Add($ListView)
-
-#Frame 2 content
-$Content2 = [Terminal.Gui.Label]::new()
-$Content2.Height = [Terminal.Gui.Dim]::Percent(90)
-$Content2.Width = [Terminal.Gui.Dim]::Fill()
-$Frame2.Add($Content2)
-
-#region release2
-# Release 2!!
-$CategoryButton = [Terminal.Gui.Button]::new()
-$CategoryButton.Text = "Copy selected category buttons"
-$CategoryButton.add_Clicked({ 
-    #$global:selectedButton.name = "111NewButton"
-    OpCon_CreateServiceRequest -url $destUrl -token $destToken -name $global:button[$ListView.SelectedItem].name -object $global:selectedButton | Out-Null
-    #$global:buttons = OpCon_GetServiceRequest -url $srcUrl -token $srcToken | Sort-Object -Property "Name"
-    $ListView.SetSource($global:buttons.name) 
- })
-$CategoryButton.Y = [Terminal.Gui.Pos]::Bottom($Content2)
-#endregion
-
-#Send buttons
-$Button = [Terminal.Gui.Button]::new()
-$Button.Text = ("SEND BUTTON")
-$Button.add_Clicked({ 
-    $confirmSubmission = [Terminal.Gui.MessageBox]::Query("Confirm submission", "**Role/s set to 'ocadm'**`n`n**Categories matched or set to none if they don't exist**", @("Submit","Cancel")) 
-
-    # Make sure user hits OK before making change
-    if($confirmSubmission -eq 0)
-    { 
-        $sourceButton = OpCon_GetServiceRequest -url $global:srcUrl -token $global:srcToken -id $global:buttons[$ListView.SelectedItem].id
+        # Grab button information
+        $sourceButton = OpCon_GetServiceRequestCL -url $srcUrl -token $srcToken $name $button
 
         # Default to ocadm role in destination OpCon
         $sourceButton.roles = @(@{ "id" = 0;"name"="ocadm"})
@@ -421,117 +422,293 @@ $Button.add_Clicked({
         # Match category/ids
         if($sourceButton.servicerequestCategory)
         { 
-            $destinationCategories = @()
             $sourceButton.servicerequestCategory | ForEach-Object{ 
                                                                     $categoryName = $_.name
-                                                                    $getCategory = $global:categories | Where-Object{ $_.name -eq $categoryName }
+                                                                    $getCategory = OpCon_GetServiceRequestCategoryCL -url $destURL -token $destToken -category $categoryName | Where-Object{ $_.name -eq $categoryName }
                                                                     
-                                                                    if($getCategory.Count -eq 1)
-                                                                    { $destinationCategories += [PSCustomObject]@{ "id" = $getCategory.id;"name" = $getCategory.name } }
+                                                                    if($getCategory)
+                                                                    { $destinationCategory = [PSCustomObject]@{ "id" = $getCategory.id;"name" = $getCategory.name; "color" = $getCategory.color } }
                                                                 } 
             
             # If Categories were matched/not
-            if($destinationCategories.Count -gt 0)
+            if($destinationCategory)
             { 
-                $sourceButton.servicerequestCategory = $destinationCategories 
-                $newButton = OpCon_CreateServiceRequest -url $global:destUrl -token $global:destToken -name $sourceButton.name -object $sourceButton
+                $sourceButton.servicerequestCategory = $destinationCategory
+                $newButton = OpCon_CreateServiceRequestCL -url $destUrl -token $destToken -object $sourceButton
             }
             else 
-            { $newButton = OpCon_CreateServiceRequest -url $global:destUrl -token $global:destToken -name $sourceButton.name -object ($sourceButton | Select-Object -ExcludeProperty "serviceRequestCategory") }
+            { $newButton = OpCon_CreateServiceRequestCL -url $destUrl -token $destToken-object ($sourceButton | Select-Object -ExcludeProperty "serviceRequestCategory") }
 
         }
         else
-        { $newButton = OpCon_CreateServiceRequest -url $global:destUrl -token $global:destToken -name $sourceButton.name -object $sourceButton }
+        { $newButton = OpCon_CreateServiceRequestCL -url $destUrl -token $destToken -object $sourceButton }
     }
- })
-$Button.Y = [Terminal.Gui.Pos]::Bottom($Content2)
-$Button.X = [Terminal.Gui.Pos]::Center()
-$Button.Visible = $false
-$Window.Add($Button)
+    else 
+    {
+        Write-Host "Missing a user/password or token!"
+        Exit 2    
+    }
+}
+else 
+{
+    Import-Module Microsoft.PowerShell.ConsoleGuiTools 
+    $module = (Get-Module Microsoft.PowerShell.ConsoleGuiTools -List).ModuleBase
+    Add-Type -Path (Join-path $module Terminal.Gui.dll)
+    [Terminal.Gui.Application]::Init()
 
-#region Options for copying by buttons or by category of buttons
-# Options label
-$OptionsLabel = [Terminal.Gui.Label]::new()
-$OptionsLabel.Text = "Use the mouse or spacebar to show Buttons or Categories"
-$OptionsLabel.Height = 1
-$OptionsLabel.Width = 75
-$OptionsLabel.Y = [Terminal.Gui.Pos]::Bottom($Frame1)
-$Window.Add($OptionsLabel)
+    #Setup button array (for category button moves)
+    #$moveButtonsArray = @()
 
-#Button Option Label
-$Label = [Terminal.Gui.Label]::new()
-$Label.Text = "Buttons"
-$Label.Height = 1
-$Label.Width = 15
-$Label.Y = [Terminal.Gui.Pos]::Bottom($OptionsLabel)
-$Window.Add($Label)
-
-#Button Option Checkbox
-$Checkbox = [Terminal.Gui.Checkbox]::new()
-$Checkbox.Checked = $false
-$Checkbox.add_Toggled({ 
-                        if($Checkbox.Checked -eq $true)
-                        {
-                            # Uncheck category checkbox
-                            $Checkbox2.Checked = $false
-
-                            # Clear any text from the right side
-                            $Content2.Text = ""
-
-                            # Remove button for sending category of buttons
-                            #$CategoryButton.Visible = $false
-
-                            # Grab and populate frames
-                            if(($global:srcToken -ne "Token ") -and ($global:srcToken))
-                            { $ListView.SetSource($global:buttons.name) }
-                            else 
-                            { 
-                                $Checkbox.Checked = $false
-                                [Terminal.Gui.MessageBox]::ErrorQuery("Error - Not Authenticated to OpCon", "Go to Menu -> Connect to OpCon`nPress ESC to close this window")
+    #Application
+    $Window = [Terminal.Gui.Window]::new()
+    $Window.Title = "OpConsole - Self Service Manager"
+    $global:showHelp = 1
+    $Window.add_KeyPress({ param($arg) 
+                        if($arg.KeyEvent.Key.ToString() -eq "F1")
+                        { 
+                            if($global:showHelp -eq 1)
+                            {
+                                $global:showHelp = 0
+                                Start-Process https://help.smatechnologies.com
                             }
+                            else{ $global:showHelp = 1 }
                         }
-                    })
-$Checkbox.Y = [Terminal.Gui.Pos]::Bottom($OptionsLabel)
-$Checkbox.X = [Terminal.Gui.Pos]::Right($Label)
-$Window.Add($Checkbox)
+                        elseif($arg.KeyEvent.Key.ToString() -eq "F2")
+                        { $MenuBar.OpenMenu() }
+                        })
+    [Terminal.Gui.Application]::Top.Add($Window)
 
-#Category Option Label
-$Label2 = [Terminal.Gui.Label]::new()
-$Label2.Text = "Categories"
-$Label2.Height = 1
-$Label2.Width = 15
-$Label2.Y = [Terminal.Gui.Pos]::Bottom($OptionsLabel)
-$Label2.X = [Terminal.Gui.Pos]::Right($Checkbox)
-$Window.Add($Label2)
+    #Menu
+    $MenuItemConnect = [Terminal.Gui.MenuItem]::new("_Connect to OpCon", "", { BuildLoginDialog } )
+    $MenuItemOpConDocs = [Terminal.Gui.MenuItem]::new("_OpCon Documentation (F1)", "", { Start-Process https://help.smatechnologies.com } )
+    $MenuItemOpConsole = [Terminal.Gui.MenuItem]::new("_About", "", { [Terminal.Gui.MessageBox]::Query("OpConsole Documentation", "Version 1.1`nWritten by Bruce Jernell`n`nCheck the project on github:`nhttps://tinyurl.com/135bucas", @("Close")) } )
+    $MenuItemExit = [Terminal.Gui.MenuItem]::new("_Exit (Ctrl + Q)", "", { Exit })
+    $MenuBarItemMenu = [Terminal.Gui.MenuBarItem]::new("Menu (F2)", @($MenuItemConnect,$MenuItemExit))
+    $MenuBarItemHelp = [Terminal.Gui.MenuBarItem]::new("Help",@($MenuItemOpConsole,$MenuItemOpConDocs))
+    $MenuBar = [Terminal.Gui.MenuBar]::new(@($MenuBarItemMenu,$MenuBarItemHelp))
+    $Window.Add($MenuBar)
 
-#Category Option Checkbox
-$Checkbox2 = [Terminal.Gui.Checkbox]::new()
-$Checkbox2.Checked = $false
-$Checkbox2.add_Toggled({ 
-            if($Checkbox2.Checked -eq $true)
+    #Frame 1
+    $Frame1 = [Terminal.Gui.FrameView]::new()
+    $Frame1.Width = [Terminal.Gui.Dim]::Percent(35)
+    $Frame1.Height = [Terminal.Gui.Dim]::Percent(90)
+    $Frame1.Y = [Terminal.Gui.Pos]::Bottom($MenuBar)
+    $Frame1.Title = "Source selection"
+    $Window.Add($Frame1)
+
+    #Frame 2
+    $Frame2 = [Terminal.Gui.FrameView]::new()
+    $Frame2.Width = [Terminal.Gui.Dim]::Percent(65)
+    $Frame2.Height = [Terminal.Gui.Dim]::Percent(90)
+    $Frame2.X = [Terminal.Gui.Pos]::Right($Frame1)
+    $Frame2.Y = [Terminal.Gui.Pos]::Bottom($MenuBar)
+    $Frame2.Title = "Additional information"
+    $Window.Add($Frame2)
+
+    #Frame 1 content
+    $ListView = [Terminal.Gui.ListView]::new()
+    $ListView.Width = [Terminal.Gui.Dim]::Fill()
+    $ListView.Height = [Terminal.Gui.Dim]::Fill()
+    $ListView.add_SelectedItemChanged( { 
+        if($Checkbox.checked -eq $true)
+        {
+            if(($global:srcToken -ne "Token ") -and ($global:srcToken))
             {
-                # Uncheck buttons checkbox
-                $Checkbox.Checked = $false
+                #$global:selectedButton = OpCon_GetServiceRequest -url $global:srcUrl -token $global:srcToken -id ($global:buttons[$ListView.SelectedItem].id)
+                #$roles = ""
+                #$global:selectedButton.roles | ForEach-Object{ $roles = $roles + $_.name + ", " }
+                #$global:buttons[$ListView.SelectedItem].roles | ForEach-Object{ $roles = $roles + $_.name + ", " }
 
-                # Remove button for sending button
-                $Button.Visible = $false
-
-                # Clear any text from the right side
-                $Content2.Text = ""
-
-                # Verify successful authentication to OpCon
-                if(($global:srcToken -ne "Token ") -and ($global:srcToken))
-                { $ListView.SetSource($global:categories.name) }
+                if(($global:buttons[$ListView.SelectedItem].html).Length -gt 200)
+                { $buttonHTML = ($global:buttons[$ListView.SelectedItem].html).SubString(0,200) }
                 else 
-                { 
-                    $Checkbox2.Checked = $false
-                    [Terminal.Gui.MessageBox]::ErrorQuery("Error - Not Authenticated to OpCon", "Go to Menu -> Connect to OpCon`nPress ESC to close this window") 
-                }
-            }
-})
-$Checkbox2.Y = [Terminal.Gui.Pos]::Bottom($OptionsLabel)
-$Checkbox2.X = [Terminal.Gui.Pos]::Right($Label2)
-$Window.Add($Checkbox2)
-#endregion
+                { $buttonHTML = $global:buttons[$ListView.SelectedItem].html }
 
-[Terminal.Gui.Application]::Run()
+                $Content2.Text = "Name: " + $global:buttons[$ListView.SelectedItem].name + 
+                            "`n`nDocumentation: " + $global:buttons[$ListView.SelectedItem].documentation +
+                            "`n`nHTML: " + $buttonHTML +
+                            "`n`nCategory: " + $global:buttons[$ListView.SelectedItem].serviceRequestCategory.name #+ 
+                            #"`n`nRoles: " + $roles.TrimEnd(", ")
+
+                # Only add the button if buttons have been received
+                $Button.Visible = $true
+            }
+            else 
+            { 
+                $Checkbox.Checked = $false
+                [Terminal.Gui.MessageBox]::ErrorQuery("Error - Not Authenticated to OpCon", "Go to Menu -> Connect to OpCon`nPress ESC to close this window") 
+            }
+
+        }
+        elseif($Checkbox2.checked -eq $true)
+        {
+            if(($global:srcToken -ne "Token ") -and ($global:srcToken))
+            {
+                $buttonsByCategory = ($global:buttons).Where({ $_.serviceRequestCategory.name -Match $global:categories[$ListView.SelectedItem].name })
+                $catButtons = ""
+                $buttonsByCategory | ForEach-Object{ $catButtons = $catButtons + $_.name + ", " }
+                $Content2.Text = "Category: " + $global:categories[$ListView.SelectedItem].name + 
+                                "`n`nCategory Color: " + $global:categories[$ListView.SelectedItem].color +
+                                "`n`nButtons: " + $catButtons.TrimEnd(", ")
+            }
+            else 
+            { 
+                $Checkbox2.Checked = $false
+                [Terminal.Gui.MessageBox]::ErrorQuery("Error - Not Authenticated to OpCon", "Go to Menu -> Connect to OpCon`nPress ESC to close this window") 
+            }
+            # Only add the button if buttons have been received
+            #$CategoryButton.Visible = $true
+        }
+    } )
+    $Frame1.Add($ListView)
+
+    #Frame 2 content
+    $Content2 = [Terminal.Gui.Label]::new()
+    $Content2.Height = [Terminal.Gui.Dim]::Percent(90)
+    $Content2.Width = [Terminal.Gui.Dim]::Fill()
+    $Frame2.Add($Content2)
+
+    #region release2
+    # Release 2!!
+    $CategoryButton = [Terminal.Gui.Button]::new()
+    $CategoryButton.Text = "Copy selected category buttons"
+    $CategoryButton.add_Clicked({ 
+        #$global:selectedButton.name = "111NewButton"
+        OpCon_CreateServiceRequest -url $destUrl -token $destToken -name $global:button[$ListView.SelectedItem].name -object $global:selectedButton | Out-Null
+        #$global:buttons = OpCon_GetServiceRequest -url $srcUrl -token $srcToken | Sort-Object -Property "Name"
+        $ListView.SetSource($global:buttons.name) 
+    })
+    $CategoryButton.Y = [Terminal.Gui.Pos]::Bottom($Content2)
+    #endregion
+
+    #Send buttons
+    $Button = [Terminal.Gui.Button]::new()
+    $Button.Text = ("SEND BUTTON")
+    $Button.add_Clicked({ 
+        $confirmSubmission = [Terminal.Gui.MessageBox]::Query("Confirm submission", "**Role/s set to 'ocadm'**`n`n**Categories matched or set to none if they don't exist**", @("Submit","Cancel")) 
+
+        # Make sure user hits OK before making change
+        if($confirmSubmission -eq 0)
+        { 
+            $sourceButton = OpCon_GetServiceRequest -url $global:srcUrl -token $global:srcToken -id $global:buttons[$ListView.SelectedItem].id
+
+            # Default to ocadm role in destination OpCon
+            $sourceButton.roles = @(@{ "id" = 0;"name"="ocadm"})
+
+            # Match category/ids
+            if($sourceButton.servicerequestCategory)
+            { 
+                $sourceButton.servicerequestCategory | ForEach-Object{ 
+                                                                        $categoryName = $_.name
+                                                                        $getCategory = $global:categories | Where-Object{ $_.name -eq $categoryName }
+                                                                        
+                                                                        if($getCategory)
+                                                                        { $destinationCategory = [PSCustomObject]@{ "id" = $getCategory.id;"name" = $getCategory.name; "color" = $getCategory.color } }
+                                                                    } 
+                
+                # If Categories were matched/not
+                if($destinationCategory)
+                { 
+                    $sourceButton.serviceRequestCategory = $destinationCategory
+                    $newButton = OpCon_CreateServiceRequest -url $global:destUrl -token $global:destToken -object $sourceButton
+                }
+                else 
+                { $newButton = OpCon_CreateServiceRequest -url $global:destUrl -token $global:destToken -object ($sourceButton | Select-Object -ExcludeProperty "serviceRequestCategory") }
+
+            }
+            else
+            { $newButton = OpCon_CreateServiceRequest -url $global:destUrl -token $global:destToken -object $sourceButton }
+        }
+    })
+    $Button.Y = [Terminal.Gui.Pos]::Bottom($Content2)
+    $Button.X = [Terminal.Gui.Pos]::Center()
+    $Button.Visible = $false
+    $Window.Add($Button)
+
+    #region Options for copying by buttons or by category of buttons
+    # Options label
+    $OptionsLabel = [Terminal.Gui.Label]::new()
+    $OptionsLabel.Text = "Use the mouse or spacebar to show Buttons or Categories"
+    $OptionsLabel.Height = 1
+    $OptionsLabel.Width = 75
+    $OptionsLabel.Y = [Terminal.Gui.Pos]::Bottom($Frame1)
+    $Window.Add($OptionsLabel)
+
+    #Button Option Label
+    $Label = [Terminal.Gui.Label]::new()
+    $Label.Text = "Buttons"
+    $Label.Height = 1
+    $Label.Width = 15
+    $Label.Y = [Terminal.Gui.Pos]::Bottom($OptionsLabel)
+    $Window.Add($Label)
+
+    #Button Option Checkbox
+    $Checkbox = [Terminal.Gui.Checkbox]::new()
+    $Checkbox.Checked = $false
+    $Checkbox.add_Toggled({ 
+                            if($Checkbox.Checked -eq $true)
+                            {
+                                # Uncheck category checkbox
+                                $Checkbox2.Checked = $false
+
+                                # Clear any text from the right side
+                                $Content2.Text = ""
+
+                                # Remove button for sending category of buttons
+                                #$CategoryButton.Visible = $false
+
+                                # Grab and populate frames
+                                if(($global:srcToken -ne "Token ") -and ($global:srcToken))
+                                { $ListView.SetSource($global:buttons.name) }
+                                else 
+                                { 
+                                    $Checkbox.Checked = $false
+                                    [Terminal.Gui.MessageBox]::ErrorQuery("Error - Not Authenticated to OpCon", "Go to Menu -> Connect to OpCon`nPress ESC to close this window")
+                                }
+                            }
+                        })
+    $Checkbox.Y = [Terminal.Gui.Pos]::Bottom($OptionsLabel)
+    $Checkbox.X = [Terminal.Gui.Pos]::Right($Label)
+    $Window.Add($Checkbox)
+
+    #Category Option Label
+    $Label2 = [Terminal.Gui.Label]::new()
+    $Label2.Text = "Categories"
+    $Label2.Height = 1
+    $Label2.Width = 15
+    $Label2.Y = [Terminal.Gui.Pos]::Bottom($OptionsLabel)
+    $Label2.X = [Terminal.Gui.Pos]::Right($Checkbox)
+    $Window.Add($Label2)
+
+    #Category Option Checkbox
+    $Checkbox2 = [Terminal.Gui.Checkbox]::new()
+    $Checkbox2.Checked = $false
+    $Checkbox2.add_Toggled({ 
+                if($Checkbox2.Checked -eq $true)
+                {
+                    # Uncheck buttons checkbox
+                    $Checkbox.Checked = $false
+
+                    # Remove button for sending button
+                    $Button.Visible = $false
+
+                    # Clear any text from the right side
+                    $Content2.Text = ""
+
+                    # Verify successful authentication to OpCon
+                    if(($global:srcToken -ne "Token ") -and ($global:srcToken))
+                    { $ListView.SetSource($global:categories.name) }
+                    else 
+                    { 
+                        $Checkbox2.Checked = $false
+                        [Terminal.Gui.MessageBox]::ErrorQuery("Error - Not Authenticated to OpCon", "Go to Menu -> Connect to OpCon`nPress ESC to close this window") 
+                    }
+                }
+    })
+    $Checkbox2.Y = [Terminal.Gui.Pos]::Bottom($OptionsLabel)
+    $Checkbox2.X = [Terminal.Gui.Pos]::Right($Label2)
+    $Window.Add($Checkbox2)
+    #endregion
+
+    [Terminal.Gui.Application]::Run()
+}
