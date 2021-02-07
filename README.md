@@ -4,7 +4,7 @@ This terminal program is designed to help move Self Service buttons between OpCo
 ![OpConsole](documentation/imgs/OpConsoleSS.JPG)
 
 # Prerequisites
-* Powershell 7+
+* <a href="https://github.com/PowerShell/PowerShell/releases">Powershell 7+</a>
 * Powershell Module - Microsoft.PowerShell.ConsoleGuiTools 
 * OpCon environments on Release 17+
 * OpCon license with access to OpCon API
@@ -14,7 +14,13 @@ To install the Microsoft.PowerShell.ConsoleGuiTools modules do the following:
 ```
 Install-Module Microsoft.PowerShell.ConsoleGuiTools 
 ```
-Launch the terminal like this:
+
+Run the program in OpCon or from a command line like this:
+```
+pwsh OpConsole_SS_Manager.ps1 -cli -srcToken "1234" -srcURL "https://<server>:<port>" -destToken "5678" -destURL "https://<server>:<port>" -button "My Button"
+```
+
+Launch the terminal gui like this:
 ```
 pwsh OpConsole_SS_Manager.ps1
 ```
