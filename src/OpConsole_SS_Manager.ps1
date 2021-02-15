@@ -3,6 +3,7 @@ The purpose of this script is to move a button from one OpCon Self Service envir
 
 Future releases will the ability to move all the buttons in a category as well as create new categories.
 
+v1.2 - Bug fixes for category checks and added logging
 v1.15 - Updated the menu bar and checkbox locations.
 v1.1 - Added logic/options to run from a command line.  Also various bug fixes.
 v1.0 - Initial release
@@ -36,7 +37,18 @@ function OpCon_Login($url,$user,$password)
         [Terminal.Gui.MessageBox]::Query("Success", "Authenticated to $url!", @("Close"))
     }
     catch [Exception]
-    { [Terminal.Gui.MessageBox]::ErrorQuery("Failed", $_.Exception.Message ) }
+    { $failed = $true;[Terminal.Gui.MessageBox]::ErrorQuery("Failed", $_.Exception.Message ) }
+
+    if($failed)
+    {
+        Write-Host ("Authentication to " + $url + " as user " + $user + " failed!") 
+        ("Authentication to " + $url + "as user " + $user + "failed!`n`n") | Out-File -FilePath ($global:path + "\SSmgr-" + (Get-Date -Format "MMddyyyy") + ".log") -Append
+    }
+    else 
+    {
+        Write-Host ("Authenticated to " + $url + " as user " + $user + "!`n") 
+        ("Authenticated to " + $url + "as user " + $user + "!`n`n") | Out-File -FilePath ($global:path + "\SSmgr-" + (Get-Date -Format "MMddyyyy") + ".log") -Append
+    }
 
     return $apiuser
 }
@@ -146,12 +158,21 @@ function OpCon_CreateServiceRequest($url,$token,$name,$doc,$html,$details,$disab
     catch [Exception]
     { 
         Write-Host $_
+        $_ | Out-File -FilePath ($global:path + "\SSmgr-" + (Get-Date -Format "MMddyyyy") + ".log") -Append
+
         [Terminal.Gui.MessageBox]::ErrorQuery("Failed Adding Button", $_.Exception.Message ) 
+
+        # To make sure success messages are not sent
         $failed = "failed"
     }
 
     if($failed -ne "failed")
-    { [Terminal.Gui.MessageBox]::Query("Button added to "+$url, "***Success***",@("Close") ) }
+    { 
+        Write-Host ("Button: " + $sourceButton.name + "`nCategory: " + $sourceButton.servicerequestCategory.name + "`nAdded to " + $global:destURL + "`n`n") 
+        ("Button: " + $sourceButton.name + "`nCategory: " + $sourceButton.servicerequestCategory.name + "`nAdded to " + $global:destURL + "`n`n") | Out-File -FilePath ($global:path + "\SSmgr-" + (Get-Date -Format "MMddyyyy") + ".log") -Append
+        
+        [Terminal.Gui.MessageBox]::Query("Button added to "+$url, "***Success***",@("Close") ) 
+    }
 
     return $servicerequest
 }
@@ -204,19 +225,17 @@ function OpCon_GetServiceRequestCategory($url,$token,$category,$id)
             $getCategory = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequestCategories?name=" + $category) -Headers @{"authorization" = $token} -ContentType "application/json" 
 
             if($getCategory -ne "")
-            { $categories = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequestCategories/" + $getCategory[0].id) -Headers @{"authorization" = $token} -ContentType "application/json"  }
-            else 
-            { Write-Host "Category $category not found" }
+            { $result = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequestCategories/" + $getCategory[0].id) -Headers @{"authorization" = $token} -ContentType "application/json"  }
         }
         elseif($id)
-        { $categories = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequestCategories/" + $id) -Headers @{"authorization" = $token} -ContentType "application/json" }
+        { $result = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequestCategories/" + $id) -Headers @{"authorization" = $token} -ContentType "application/json" }
         else 
-        { $categories = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequestCategories") -Headers @{"authorization" = $token} -ContentType "application/json" }
+        { $result = Invoke-RestMethod -Method GET -Uri ($url + "/api/ServiceRequestCategories") -Headers @{"authorization" = $token} -ContentType "application/json" }
     }
     catch [Exception]
     { [Terminal.Gui.MessageBox]::ErrorQuery("Failed", $_.Exception.Message ) }
 
-    return $categories
+    return $result
 }
 
 #Function to get a Service Request category/categories
@@ -360,7 +379,7 @@ function BuildLoginDialog()
         $global:srcToken = "Token " + (OpCon_Login -url $SourceURLTextfield.text.ToString() -user $SourceUsernameTextfield.text.ToString() -password $SourcePasswordTextfield.text.ToString()).id
         $global:srcURL = $SourceURLTextfield.text.ToString()
 
-        # Allows for using the same logins to different OpCon environments
+        # Allows for using the same logins to different OpCon environments 
         if($DestinationUsernameTextfield.text.ToString() -eq "")
         { $DestinationUsernameTextfield.text = $SourceUsernameTextfield.text }
         if($DestinationPasswordTextfield.text.ToString() -eq "")
@@ -399,6 +418,9 @@ if($PSVersionTable.PSVersion.Major -ge 7)
 {
     #Skip self signed certificates
     OpCon_SkipCerts
+
+    #Store script path for logging purposes
+    $global:path = Split-Path -parent $MyInvocation.MyCommand.Definition
 }
 else 
 {
@@ -426,13 +448,10 @@ if($cli)
         # Match category/ids
         if($sourceButton.servicerequestCategory)
         { 
-            $sourceButton.servicerequestCategory | ForEach-Object{ 
-                                                                    $categoryName = $_.name
-                                                                    $getCategory = OpCon_GetServiceRequestCategoryCL -url $destURL -token $destToken -category $categoryName | Where-Object{ $_.name -eq $categoryName }
-                                                                    
-                                                                    if($getCategory)
-                                                                    { $destinationCategory = [PSCustomObject]@{ "id" = $getCategory.id;"name" = $getCategory.name; "color" = $getCategory.color } }
-                                                                } 
+            $getCategory = OpCon_GetServiceRequestCategoryCL -url $destURL -token $destToken -category $sourceButton.servicerequestCategory.name
+            
+            if($getCategory)
+            { $destinationCategory = [PSCustomObject]@{ "id" = $getCategory.id;"name" = $getCategory.name; "color" = $getCategory.color } }
             
             # If Categories were matched/not
             if($destinationCategory)
@@ -459,9 +478,6 @@ else
     $module = (Get-Module Microsoft.PowerShell.ConsoleGuiTools -List).ModuleBase
     Add-Type -Path (Join-path $module Terminal.Gui.dll)
     [Terminal.Gui.Application]::Init()
-
-    #Setup button array (for category button moves)
-    #$moveButtonsArray = @()
 
     #Application
     $Window = [Terminal.Gui.Window]::new()
@@ -541,7 +557,7 @@ else
     } )
     $MenuItemCategory.CheckType = "Checked"
     $MenuItemOpConDocs = [Terminal.Gui.MenuItem]::new("_OpCon Documentation", "", { Start-Process https://help.smatechnologies.com } )
-    $MenuItemOpConsole = [Terminal.Gui.MenuItem]::new("_About", "", { [Terminal.Gui.MessageBox]::Query("OpConsole Documentation", "Version 1.15`nWritten by Bruce Jernell`n`nCheck the project on github:`nhttps://tinyurl.com/135bucas", @("Close")) } )
+    $MenuItemOpConsole = [Terminal.Gui.MenuItem]::new("_About", "", { [Terminal.Gui.MessageBox]::Query("OpConsole Documentation", "Version 1.2`nWritten by Bruce Jernell`n`nCheck the project on github:`nhttps://tinyurl.com/135bucas", @("Close")) } )
     $MenuItemExit = [Terminal.Gui.MenuItem]::new("_Exit (Ctrl + Q)", "", { Exit })
     $MenuBarItemMenu = [Terminal.Gui.MenuBarItem]::new("Menu (F2)", @($MenuItemConnect,$MenuItemButtons,$MenuItemCategory,$MenuItemExit))
     $MenuBarItemHelp = [Terminal.Gui.MenuBarItem]::new("Help",@($MenuItemOpConsole,$MenuItemOpConDocs))
@@ -658,13 +674,10 @@ else
             # Match category/ids
             if($sourceButton.servicerequestCategory)
             { 
-                $sourceButton.servicerequestCategory | ForEach-Object{ 
-                                                                        $categoryName = $_.name
-                                                                        $getCategory = $global:categories | Where-Object{ $_.name -eq $categoryName }
-                                                                        
-                                                                        if($getCategory)
-                                                                        { $destinationCategory = [PSCustomObject]@{ "id" = $getCategory.id;"name" = $getCategory.name; "color" = $getCategory.color } }
-                                                                    } 
+                $getCategory = OpCon_GetServiceRequestCategory -url $global:destURL -token $global:destToken -category $sourceButton.servicerequestCategory.name
+            
+                if($getCategory)
+                { $destinationCategory = [PSCustomObject]@{ "id" = $getCategory.id;"name" = $getCategory.name; "color" = $getCategory.color } }
                 
                 # If Categories were matched/not
                 if($destinationCategory)
