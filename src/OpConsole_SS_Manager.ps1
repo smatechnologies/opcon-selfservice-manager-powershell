@@ -3,6 +3,7 @@ The purpose of this script is to move a button from one OpCon Self Service envir
 
 Future releases will the ability to move all the buttons in a category as well as create new categories.
 
+v1.3 - Added ability to move category of buttons
 v1.2 - Bug fixes for category checks and added logging
 v1.15 - Updated the menu bar and checkbox locations.
 v1.1 - Added logic/options to run from a command line.  Also various bug fixes.
@@ -12,6 +13,7 @@ param(
     $srcUrl, # URL to Source OpCon API ie https://<opconserver>:<port>
     $destUrl, # URL to Destination OpCon API
     $button, # Button name
+    $category, # Category name
     $srcUser, # Used for API authentication
     $srcPassword, # Used for API authentication, recommend passing in as an encrypted global property
     $destUser, # Used for API authentication
@@ -168,8 +170,8 @@ function OpCon_CreateServiceRequest($url,$token,$name,$doc,$html,$details,$disab
 
     if($failed -ne "failed")
     { 
-        Write-Host ("Button: " + $sourceButton.name + "`nCategory: " + $sourceButton.servicerequestCategory.name + "`nAdded to " + $global:destURL + "`n`n") 
-        ("Button: " + $sourceButton.name + "`nCategory: " + $sourceButton.servicerequestCategory.name + "`nAdded to " + $global:destURL + "`n`n") | Out-File -FilePath ($global:path + "\SSmgr-" + (Get-Date -Format "MMddyyyy") + ".log") -Append
+        Write-Host ("Button: " + $servicerequest.name + "`nAdded to " + $global:destURL + "`n`n") 
+        ("Button: " + $servicerequest.name + "`nAdded to " + $global:destURL + "`n`n") | Out-File -FilePath ($global:path + "\SSmgr-" + (Get-Date -Format "MMddyyyy") + ".log") -Append
         
         [Terminal.Gui.MessageBox]::Query("Button added to "+$url, "***Success***",@("Close") ) 
     }
@@ -210,7 +212,7 @@ function OpCon_CreateServiceRequestCL($url,$token,$name,$doc,$html,$details,$dis
         Exit 3
     }
 
-    Write-Host "Button added to "+$url
+    Write-Host "Button "$servicerequest.name"added to $url"
 
     return $servicerequest
 }
@@ -439,32 +441,67 @@ if($cli)
         if(!$destToken)
         { $destToken = "Token " + (OpCOn_LoginCL -url $destURL -user $destUser -password $destPassword).id }
 
-        # Grab button information
-        $sourceButton = OpCon_GetServiceRequestCL -url $srcUrl -token $srcToken $name $button
+        if($button)
+        {
+            # Grab button information
+            $sourceButton = OpCon_GetServiceRequestCL -url $srcUrl -token $srcToken $name $button
 
-        # Default to ocadm role in destination OpCon
-        $sourceButton.roles = @(@{ "id" = 0;"name"="ocadm"})
+            # Default to ocadm role in destination OpCon
+            $sourceButton.roles = @(@{ "id" = 0;"name"="ocadm"})
 
-        # Match category/ids
-        if($sourceButton.servicerequestCategory)
-        { 
-            $getCategory = OpCon_GetServiceRequestCategoryCL -url $destURL -token $destToken -category $sourceButton.servicerequestCategory.name
+            # Match category/ids
+            if($sourceButton.servicerequestCategory)
+            { 
+                $getCategory = OpCon_GetServiceRequestCategoryCL -url $destURL -token $destToken -category $sourceButton.servicerequestCategory.name
+                
+                if($getCategory)
+                { $destinationCategory = [PSCustomObject]@{ "id" = $getCategory.id;"name" = $getCategory.name; "color" = $getCategory.color } }
+                
+                # If Categories were matched/not
+                if($destinationCategory)
+                { 
+                    $sourceButton.servicerequestCategory = $destinationCategory
+                    $newButton = OpCon_CreateServiceRequestCL -url $destUrl -token $destToken -object $sourceButton
+                }
+                else 
+                { $newButton = OpCon_CreateServiceRequestCL -url $destUrl -token $destToken-object ($sourceButton | Select-Object -ExcludeProperty "serviceRequestCategory") }
+
+            }
+            else
+            { $newButton = OpCon_CreateServiceRequestCL -url $destUrl -token $destToken -object $sourceButton }
+        }
+        elseif($category)
+        {
+            $sourceButtons = OpCon_GetServiceRequestCL -url $srcUrl -token $srcToken | Where-Object{ $_.serviceRequestCategory.name -eq $category }
             
+            # Default to ocadm role in destination OpCon
+            $role = @(@{ "id" = 0;"name"="ocadm"})
+
+            # Match category/ids
+            $getCategory = OpCon_GetServiceRequestCategoryCL -url $destURL -token $destToken -category $category
+        
             if($getCategory)
             { $destinationCategory = [PSCustomObject]@{ "id" = $getCategory.id;"name" = $getCategory.name; "color" = $getCategory.color } }
             
             # If Categories were matched/not
             if($destinationCategory)
             { 
-                $sourceButton.servicerequestCategory = $destinationCategory
-                $newButton = OpCon_CreateServiceRequestCL -url $destUrl -token $destToken -object $sourceButton
+                $sourceButtons | ForEach-Object{
+                                                $details = OpCon_GetServiceRequestCL -url $srcUrl -token $srcToken -id $_.id
+                                                $details.roles = $role
+                                                $details.serviceRequestCategory = $destinationCategory
+                                                OpCon_CreateServiceRequestCL -url $destUrl -token $destToken -name $details.name -object $details | Out-Null
+                }
             }
             else 
-            { $newButton = OpCon_CreateServiceRequestCL -url $destUrl -token $destToken-object ($sourceButton | Select-Object -ExcludeProperty "serviceRequestCategory") }
-
+            {
+                $sourceButtons | ForEach-Object{
+                                                $details = OpCon_GetServiceRequestCL -url $srcUrl -token $srcToken -id $_.id
+                                                $details.roles = $role
+                                                OpCon_CreateServiceRequestCL -url $destUrl -token $destToken -name $details.name -object ($details | Select-Object -ExcludeProperty "serviceRequestCategory") | Out-Null
+                }    
+            } 
         }
-        else
-        { $newButton = OpCon_CreateServiceRequestCL -url $destUrl -token $destToken -object $sourceButton }
     }
     else 
     {
@@ -557,7 +594,7 @@ else
     } )
     $MenuItemCategory.CheckType = "Checked"
     $MenuItemOpConDocs = [Terminal.Gui.MenuItem]::new("_OpCon Documentation", "", { Start-Process https://help.smatechnologies.com } )
-    $MenuItemOpConsole = [Terminal.Gui.MenuItem]::new("_About", "", { [Terminal.Gui.MessageBox]::Query("OpConsole Documentation", "Version 1.2`nWritten by Bruce Jernell`n`nCheck the project on github:`nhttps://tinyurl.com/135bucas", @("Close")) } )
+    $MenuItemOpConsole = [Terminal.Gui.MenuItem]::new("_About", "", { [Terminal.Gui.MessageBox]::Query("OpConsole Documentation", "Version 1.3`nWritten by Bruce Jernell`n`nCheck the project on github:`nhttps://tinyurl.com/135bucas", @("Close")) } )
     $MenuItemExit = [Terminal.Gui.MenuItem]::new("_Exit (Ctrl + Q)", "", { Exit })
     $MenuBarItemMenu = [Terminal.Gui.MenuBarItem]::new("Menu (F2)", @($MenuItemConnect,$MenuItemButtons,$MenuItemCategory,$MenuItemExit))
     $MenuBarItemHelp = [Terminal.Gui.MenuBarItem]::new("Help",@($MenuItemOpConsole,$MenuItemOpConDocs))
@@ -633,7 +670,7 @@ else
                 [Terminal.Gui.MessageBox]::ErrorQuery("Error - Not Authenticated to OpCon", "Go to Menu -> Connect to OpCon`nPress ESC to close this window") 
             }
             # Only add the button if buttons have been received
-            #$CategoryButton.Visible = $true
+            $CategoryButton.Visible = $true
         }
     } )
     $Frame1.Add($ListView)
@@ -645,23 +682,56 @@ else
     $Frame2.Add($Content2)
 
     #region release2
-    # Release 2!!
     $CategoryButton = [Terminal.Gui.Button]::new()
-    $CategoryButton.Text = "Copy selected category buttons"
+    $CategoryButton.Text = "SUBMIT CATEGORY"
     $CategoryButton.add_Clicked({ 
-        #$global:selectedButton.name = "111NewButton"
-        OpCon_CreateServiceRequest -url $destUrl -token $destToken -name $global:button[$ListView.SelectedItem].name -object $global:selectedButton | Out-Null
-        #$global:buttons = OpCon_GetServiceRequest -url $srcUrl -token $srcToken | Sort-Object -Property "Name"
-        $ListView.SetSource($global:buttons.name) 
+        $confirmSubmission = [Terminal.Gui.MessageBox]::Query("Confirm submission", "**All buttons in the category will be copied**`n`n**Role/s will be set to 'ocadm'**`n`n**Category will be matched or set to none**", @("Submit","Cancel")) 
+
+        # Make sure user hits OK before making change
+        if($confirmSubmission -eq 0)
+        { 
+            $sourceButtons = $global:buttons | Where-Object{ $_.serviceRequestCategory.name -eq $global:categories[$ListView.selectedItem].name }
+            
+            # Default to ocadm role in destination OpCon
+            $role = @(@{ "id" = 0;"name"="ocadm"})
+
+            # Match category/ids
+            $getCategory = OpCon_GetServiceRequestCategory -url $global:destURL -token $global:destToken -category $global:categories[$ListView.selectedItem].name
+        
+            if($getCategory)
+            { $destinationCategory = [PSCustomObject]@{ "id" = $getCategory.id;"name" = $getCategory.name; "color" = $getCategory.color } }
+            
+            # If Categories were matched/not
+            if($destinationCategory)
+            { 
+                $sourceButtons | ForEach-Object{
+                                                $details = OpCon_GetServiceRequest -url $global:srcUrl -token $global:srcToken -id $_.id
+                                                $details.roles = $role
+                                                $details.serviceRequestCategory = $destinationCategory
+                                                OpCon_CreateServiceRequest -url $global:destUrl -token $global:destToken -name $details.name -object $details | Out-Null
+                }
+            }
+            else 
+            {
+                $sourceButtons | ForEach-Object{
+                                                $details = OpCon_GetServiceRequest -url $global:srcUrl -token $global:srcToken -id $_.id
+                                                $details.roles = $role
+                                                OpCon_CreateServiceRequest -url $global:destUrl -token $global:destToken -name $details.name -object ($details | Select-Object -ExcludeProperty "serviceRequestCategory") | Out-Null
+                }    
+            } 
+        }
     })
-    $CategoryButton.Y = [Terminal.Gui.Pos]::Bottom($Content2)
+    $CategoryButton.Y = [Terminal.Gui.Pos]::Bottom($Frame1)
+    $CategoryButton.X = [Terminal.Gui.Pos]::Center()
+    $CategoryButton.Visible = $false
+    $Window.Add($CategoryButton)
     #endregion
 
     #Send buttons
     $Button = [Terminal.Gui.Button]::new()
-    $Button.Text = ("SUBMIT")
+    $Button.Text = ("SUBMIT BUTTON")
     $Button.add_Clicked({ 
-        $confirmSubmission = [Terminal.Gui.MessageBox]::Query("Confirm submission", "**Role/s set to 'ocadm'**`n`n**Categories matched or set to none if they don't exist**", @("Submit","Cancel")) 
+        $confirmSubmission = [Terminal.Gui.MessageBox]::Query("Confirm submission", "**Role/s will be set to 'ocadm'**`n`n**Category matched or set to none**", @("Submit","Cancel")) 
 
         # Make sure user hits OK before making change
         if($confirmSubmission -eq 0)
