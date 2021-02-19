@@ -1,8 +1,9 @@
 <#
 The purpose of this script is to move a button from one OpCon Self Service environment to another
 
-Future releases will the ability to move all the buttons in a category as well as create new categories.
+Future releases will add the ability create new categories and transform pieces of the buttons.
 
+v1.4 - Bug fixes, UX improvements and ability to flip environments
 v1.3 - Added ability to move category of buttons
 v1.2 - Bug fixes for category checks and added logging
 v1.15 - Updated the menu bar and checkbox locations.
@@ -173,7 +174,7 @@ function OpCon_CreateServiceRequest($url,$token,$name,$doc,$html,$details,$disab
         Write-Host ("Button: " + $servicerequest.name + "`nAdded to " + $global:destURL + "`n`n") 
         ("Button: " + $servicerequest.name + "`nAdded to " + $global:destURL + "`n`n") | Out-File -FilePath ($global:path + "\SSmgr-" + (Get-Date -Format "MMddyyyy") + ".log") -Append
         
-        [Terminal.Gui.MessageBox]::Query("Button added to "+$url, "***Success***",@("Close") ) 
+        [Terminal.Gui.MessageBox]::Query("Button "+ $servicerequest.name + " added to "+$url, "***Success***",@("Close") ) 
     }
 
     return $servicerequest
@@ -390,11 +391,25 @@ function BuildLoginDialog()
         $global:destToken = "Token " + (OpCon_Login -url $DestinationURLTextfield.text.ToString() -user $DestinationUsernameTextfield.text.ToString() -password $DestinationPasswordTextfield.text.ToString()).id
         $global:destURL = $DestinationURLTextfield.text.ToString()
 
+        #Load content for environment frame
+        $EnvContent.Text = "Source: " + $global:srcURL + "`nDestination: " + $global:destUrl
+        $EnvButton.Visible = $true
+
         if(($global:srcToken -ne "Token ") -and ($global:srcToken) -and ($global:destToken -ne "Token ") -and ($global:destToken))
         {
             # Grab all categories and buttons
             $global:buttons = OpCon_GetServiceRequest -url $global:srcUrl -token $global:srcToken | Sort-Object -Property "Name"
             $global:categories = OpCon_GetServiceRequestCategory -url $global:srcUrl -token $global:srcToken | Sort-Object -Property "name"
+
+            if($global:buttons.Count -eq 0)
+            { $global:buttons = @() }
+            elseif($global:buttons.Count -eq 1)
+            { $global:buttons = @( $global:buttons.name ) }
+
+            if($global:categoriess.Count -eq 0)
+            { $global:categories = @() }
+            elseif($global:categories.Count -eq 1)
+            { $global:categories = @( $global:categories.name ) }
 
             # Close the dialog window
             [Terminal.Gui.Application]::RequestStop()
@@ -534,8 +549,10 @@ else
                                                                 $MenuItemButtons.Checked = $false 
 
                                                                 # Clear frames
-                                                                $ListView.SetSource= ""
+                                                                $ListView.SetSource(@())
                                                                 $Content2.Text = ""
+                                                                $CatButtonListView.SetSource(@())
+                                                                $CatButtonsFrame.Title = ""
                                                             }
                                                             else
                                                             { 
@@ -544,14 +561,32 @@ else
                                                                 $MenuItemCategory.Checked = $false
                                                                 
                                                                 # Remove button for sending button
-                                                                $Button.Visible = $false
+                                                                $CategoryButton.Visible = $false
 
                                                                 # Clear any text from the right side
                                                                 $Content2.Text = ""
+                                                                $CatButtonListView.SetSource(@())
+                                                                $CatButtonsFrame.Title = "Button Roles"
 
                                                                 # Verify successful authentication to OpCon
                                                                 if(($global:srcToken -ne "Token ") -and ($global:srcToken))
-                                                                { $ListView.SetSource($global:buttons.name) }
+                                                                { 
+                                                                    # Grab all buttons
+                                                                    $global:buttons = OpCon_GetServiceRequest -url $global:srcUrl -token $global:srcToken | Sort-Object -Property "Name"
+
+                                                                    if($global:buttons.Count -eq 0)
+                                                                    {
+                                                                        $global:buttons = @() 
+                                                                        $ListView.SetSource( @() )  
+                                                                    }
+                                                                    elseif($global:buttons.Count -eq 1)
+                                                                    {
+                                                                        $global:buttons = @( $global:buttons ) 
+                                                                        $ListView.SetSource( @( $global:buttons.name ) ) 
+                                                                    }
+                                                                    else 
+                                                                    { $ListView.SetSource($global:buttons.name) }
+                                                                }
                                                                 else 
                                                                 { 
                                                                     $MenuItemButtons.Checked = $false
@@ -567,8 +602,9 @@ else
                                                                 $MenuItemCategory.Checked = $false 
 
                                                                 # Clear frames
-                                                                $ListView.SetSource= ""
+                                                                $ListView.SetSource(@())
                                                                 $Content2.Text = ""
+                                                                $CatButtonListView.SetSource(@())
                                                             }
                                                             else
                                                             { 
@@ -581,10 +617,28 @@ else
 
                                                                 # Clear any text from the right side
                                                                 $Content2.Text = ""
+                                                                $CatButtonListView.SetSource(@())
+                                                                $CatButtonsFrame.Title = "Buttons in Category"
 
                                                                 # Verify successful authentication to OpCon
                                                                 if(($global:srcToken -ne "Token ") -and ($global:srcToken))
-                                                                { $ListView.SetSource($global:categories.name) }
+                                                                { 
+                                                                    #Grab all categories
+                                                                    $global:categories = OpCon_GetServiceRequestCategory -url $global:srcUrl -token $global:srcToken | Sort-Object -Property "name"
+
+                                                                    if($global:categories.Count -eq 0)
+                                                                    { 
+                                                                        $global:categories = @() 
+                                                                        $ListView.SetSource($global:categories)
+                                                                    }
+                                                                    elseif($global:categories.Count -eq 1)
+                                                                    { 
+                                                                        $global:categories = @( $global:categories ) 
+                                                                        $ListView.SetSource($global:categories.name)
+                                                                    }
+                                                                    else 
+                                                                    { $ListView.SetSource($global:categories.name) }
+                                                                }
                                                                 else 
                                                                 { 
                                                                     $MenuItemCategory.Checked = $false
@@ -594,17 +648,18 @@ else
     } )
     $MenuItemCategory.CheckType = "Checked"
     $MenuItemOpConDocs = [Terminal.Gui.MenuItem]::new("_OpCon Documentation", "", { Start-Process https://help.smatechnologies.com } )
-    $MenuItemOpConsole = [Terminal.Gui.MenuItem]::new("_About", "", { [Terminal.Gui.MessageBox]::Query("OpConsole Documentation", "Version 1.3`nWritten by Bruce Jernell`n`nCheck the project on github:`nhttps://tinyurl.com/135bucas", @("Close")) } )
+    $MenuItemOpConsole = [Terminal.Gui.MenuItem]::new("_About", "", { [Terminal.Gui.MessageBox]::Query("OpConsole Documentation", "Version 1.4`nWritten by Bruce Jernell`n`nCheck the project on github:`nhttps://tinyurl.com/135bucas", @("Close")) } )
     $MenuItemExit = [Terminal.Gui.MenuItem]::new("_Exit (Ctrl + Q)", "", { Exit })
-    $MenuBarItemMenu = [Terminal.Gui.MenuBarItem]::new("Menu (F2)", @($MenuItemConnect,$MenuItemButtons,$MenuItemCategory,$MenuItemExit))
-    $MenuBarItemHelp = [Terminal.Gui.MenuBarItem]::new("Help",@($MenuItemOpConsole,$MenuItemOpConDocs))
-    $MenuBar = [Terminal.Gui.MenuBar]::new(@($MenuBarItemMenu,$MenuBarItemHelp))
+    $MenuBarItemMenu = [Terminal.Gui.MenuBarItem]::new("Connection/s", @($MenuItemConnect))
+    $MenuBarItemDisplay = [Terminal.Gui.MenuBarItem]::new("Display Options (F2)", @($MenuItemButtons,$MenuItemCategory))
+    $MenuBarItemHelp = [Terminal.Gui.MenuBarItem]::new("Help",@($MenuItemOpConsole,$MenuItemOpConDocs,$MenuItemExit))
+    $MenuBar = [Terminal.Gui.MenuBar]::new(@($MenuBarItemDisplay,$MenuBarItemMenu,$MenuBarItemHelp))
     $Window.Add($MenuBar)
 
     #Frame 1
     $Frame1 = [Terminal.Gui.FrameView]::new()
     $Frame1.Width = [Terminal.Gui.Dim]::Percent(35)
-    $Frame1.Height = [Terminal.Gui.Dim]::Percent(95)
+    $Frame1.Height = [Terminal.Gui.Dim]::Fill()
     $Frame1.Y = [Terminal.Gui.Pos]::Bottom($MenuBar)
     $Frame1.Title = "Source selection"
     $Window.Add($Frame1)
@@ -612,11 +667,29 @@ else
     #Frame 2
     $Frame2 = [Terminal.Gui.FrameView]::new()
     $Frame2.Width = [Terminal.Gui.Dim]::Percent(65)
-    $Frame2.Height = [Terminal.Gui.Dim]::Percent(95)
+    $Frame2.Height = [Terminal.Gui.Dim]::Percent(65)
     $Frame2.X = [Terminal.Gui.Pos]::Right($Frame1)
     $Frame2.Y = [Terminal.Gui.Pos]::Bottom($MenuBar)
-    $Frame2.Title = "Additional information"
+    $Frame2.Title = "Details"
     $Window.Add($Frame2)
+
+    #Category buttons list frame
+    $CatButtonsFrame = [Terminal.Gui.Frameview]::new()
+    $CatButtonsFrame.Width = [Terminal.Gui.Dim]::Percent(65)
+    $CatButtonsFrame.Height = [Terminal.Gui.Dim]::Percent(15)
+    $CatButtonsFrame.Y = [Terminal.Gui.Pos]::Bottom($Frame2)
+    $CatButtonsFrame.X = [Terminal.Gui.Pos]::Right($Frame1)
+    $CatButtonsFrame.Title = "Additional Information"
+    $Window.Add($CatButtonsFrame)
+
+    #Environment
+    $EnvFrame = [Terminal.Gui.FrameView]::new()
+    $EnvFrame.Width = [Terminal.Gui.Dim]::Percent(65)
+    $EnvFrame.Height = [Terminal.Gui.Dim]::Percent(20)
+    $EnvFrame.X = [Terminal.Gui.Pos]::Right($Frame1)
+    $EnvFrame.Y = [Terminal.Gui.Pos]::Bottom($CatButtonsFrame)
+    $EnvFrame.Title = "Environments"
+    $Window.Add($EnvFrame)
 
     #Frame 1 content
     $ListView = [Terminal.Gui.ListView]::new()
@@ -627,61 +700,82 @@ else
         {
             if(($global:srcToken -ne "Token ") -and ($global:srcToken))
             {
-                #$global:selectedButton = OpCon_GetServiceRequest -url $global:srcUrl -token $global:srcToken -id ($global:buttons[$ListView.SelectedItem].id)
-                #$roles = ""
-                #$global:selectedButton.roles | ForEach-Object{ $roles = $roles + $_.name + ", " }
-                #$global:buttons[$ListView.SelectedItem].roles | ForEach-Object{ $roles = $roles + $_.name + ", " }
+                if(($global:buttons[$ListView.SelectedItem].documentation).Length -gt 200)
+                { $buttonDocs = ($global:buttons[$ListView.SelectedItem].documentation).SubString(0,200) }
+                else 
+                { $buttonDocs = $global:buttons[$ListView.SelectedItem].documentation }
 
                 if(($global:buttons[$ListView.SelectedItem].html).Length -gt 200)
                 { $buttonHTML = ($global:buttons[$ListView.SelectedItem].html).SubString(0,200) }
                 else 
                 { $buttonHTML = $global:buttons[$ListView.SelectedItem].html }
 
-                $Content2.Text = "Name: " + $global:buttons[$ListView.SelectedItem].name + 
-                            "`n`nDocumentation: " + $global:buttons[$ListView.SelectedItem].documentation +
-                            "`n`nHTML: " + $buttonHTML +
-                            "`n`nCategory: " + $global:buttons[$ListView.SelectedItem].serviceRequestCategory.name #+ 
-                            #"`n`nRoles: " + $roles.TrimEnd(", ")
+                $Content2.Text = "NAME: " + $global:buttons[$ListView.SelectedItem].name + 
+                                "`n`nDOCUMENTATION: " + $buttonDocs +
+                                "`n`nCATEGORY: " + $global:buttons[$ListView.SelectedItem].serviceRequestCategory.name + 
+                                "`n`nHTML: " + $buttonHTML
+                
+                $buttonSpecific = OpCon_GetServiceRequest -url $global:srcUrl -token $global:srcToken -id $global:buttons[$ListView.SelectedItem].id
+                if($buttonSpecific.roles.Count -eq 0)
+                { $CatButtonListView.SetSource( @() ) }
+                elseif($buttonSpecific.roles.Count -eq 1)
+                { $CatButtonListView.SetSource( @($buttonSpecific.roles.name) ) }
+                else
+                { $CatButtonListView.SetSource( ($buttonSpecific.roles.name | Sort-Object) ) }            
 
                 # Only add the button if buttons have been received
                 $Button.Visible = $true
+                $CategoryButton.Visible = $false
             }
             else 
             { 
                 $MenuItemButton.Checked = $false
                 [Terminal.Gui.MessageBox]::ErrorQuery("Error - Not Authenticated to OpCon", "Go to Menu -> Connect to OpCon`nPress ESC to close this window") 
             }
-
         }
         elseif($MenuItemCategory.Checked -eq $true)
         {
             if(($global:srcToken -ne "Token ") -and ($global:srcToken))
             {
                 $buttonsByCategory = ($global:buttons).Where({ $_.serviceRequestCategory.name -Match $global:categories[$ListView.SelectedItem].name })
-                $catButtons = ""
-                $buttonsByCategory | ForEach-Object{ $catButtons = $catButtons + $_.name + ", " }
-                $Content2.Text = "Category: " + $global:categories[$ListView.SelectedItem].name + 
-                                "`n`nCategory Color: " + $global:categories[$ListView.SelectedItem].color +
-                                "`n`nButtons: " + $catButtons.TrimEnd(", ")
+
+                $Content2.Text = "CATEGORY: " + $global:categories[$ListView.SelectedItem].name + 
+                                "`n`nCOLOR: " + $global:categories[$ListView.SelectedItem].color
+
+                if($buttonsByCategory.Count -eq 0)
+                { $CatButtonListView.SetSource( @() ) }
+                elseif($buttonsByCategory.Count -eq 1)
+                { $CatButtonListView.SetSource( @($buttonsByCategory[0].name) ) }
+                else
+                { $CatButtonListView.SetSource( ($buttonsByCategory.name | Sort-Object) ) }
+
+                # Only add the button if buttons have been received
+                $CategoryButton.Visible = $true
+                $Button.Visible = $false
             }
             else 
             { 
                 $MenuItemCategory.Checked = $false
                 [Terminal.Gui.MessageBox]::ErrorQuery("Error - Not Authenticated to OpCon", "Go to Menu -> Connect to OpCon`nPress ESC to close this window") 
             }
-            # Only add the button if buttons have been received
-            $CategoryButton.Visible = $true
         }
     } )
     $Frame1.Add($ListView)
 
     #Frame 2 content
     $Content2 = [Terminal.Gui.Label]::new()
-    $Content2.Height = [Terminal.Gui.Dim]::Fill()
+    $Content2.Height = [Terminal.Gui.Dim]::Percent(95)
     $Content2.Width = [Terminal.Gui.Dim]::Fill()
     $Frame2.Add($Content2)
 
-    #region release2
+    #Env content
+    $EnvContent = [Terminal.Gui.Label]::new()
+    $EnvContent.Text = "SOURCE: " + $global:srcURL + "`nDESTINATION: " + $global:destUrl
+    $EnvContent.Height = [Terminal.Gui.Dim]::Percent(75)
+    $EnvContent.Width = [Terminal.Gui.Dim]::Fill()
+    $EnvFrame.Add($EnvContent)
+
+    #region Category Button
     $CategoryButton = [Terminal.Gui.Button]::new()
     $CategoryButton.Text = "SUBMIT CATEGORY"
     $CategoryButton.add_Clicked({ 
@@ -721,10 +815,10 @@ else
             } 
         }
     })
-    $CategoryButton.Y = [Terminal.Gui.Pos]::Bottom($Frame1)
+    $CategoryButton.Y = [Terminal.Gui.Pos]::Bottom($Content2)
     $CategoryButton.X = [Terminal.Gui.Pos]::Center()
     $CategoryButton.Visible = $false
-    $Window.Add($CategoryButton)
+    $Frame2.Add($CategoryButton)
     #endregion
 
     #Send buttons
@@ -763,10 +857,42 @@ else
             { $newButton = OpCon_CreateServiceRequest -url $global:destUrl -token $global:destToken -object $sourceButton }
         }
     })
-    $Button.Y = [Terminal.Gui.Pos]::Bottom($Frame1)
+    $Button.Y = [Terminal.Gui.Pos]::Bottom($Content2)
     $Button.X = [Terminal.Gui.Pos]::Center()
     $Button.Visible = $false
-    $Window.Add($Button)
+    $Frame2.Add($Button)
 
+    #Category buttons list content
+    $CatButtonListView = [Terminal.Gui.ListView]::new()
+    $CatButtonListView.Width = [Terminal.Gui.Dim]::Fill()
+    $CatButtonListView.Height = [Terminal.Gui.Dim]::Fill()
+    #$CatButtonListView.add_SelectedItemChanged( { } )  #Options may be added in the future
+    $CatButtonsFrame.Add($CatButtonListView)
+
+    #region Environment Button
+    $EnvButton = [Terminal.Gui.Button]::new()
+    $EnvButton.Text = "FLIP ENVIRONMENTS"
+    $EnvButton.add_Clicked({ 
+                $tempsrcUrl = $global:srcUrl
+                $tempsrcToken = $global:srcToken
+
+                $global:srcUrl = $global:destUrl
+                $global:srcToken = $global:destToken
+
+                $global:destUrl = $tempsrcUrl
+                $global:destToken = $tempsrcToken
+
+                $EnvContent.Text = "Source: " + $global:srcURL + "`nDestination: " + $global:destUrl
+                $ListView.SetSource(@())
+                $Content2.Text = ""
+                $CatButtonListView.SetSource(@())
+    })
+    $EnvButton.Y = [Terminal.Gui.Pos]::Bottom($EnvContent)
+    $EnvButton.X = [Terminal.Gui.Pos]::Center()
+    $EnvButton.Visible = $false
+    $EnvFrame.Add($EnvButton)
+    #endregion
+
+    BuildLoginDialog
     [Terminal.Gui.Application]::Run()
 }
