@@ -24,13 +24,16 @@ Launch the terminal gui like this:
 ```
 pwsh OpConsole_SS_Manager.ps1
 ```
-After launching use F2 (or your mouse) and navigate to Menu -> Connect to OpCon
+
+There will be an initial login window so that you can authenticate to your OpCon environments.
 ![Login](documentation/imgs/OpConsoleSSLogin.JPG)
 
-Once authenticated you can then select the button checkbox from the Menu and see the buttons in your "source" environment that you have access to move:
+After launching select Buttons or Categories to display the items in your "source" environment that you have access to move:
 ![Buttons](documentation/imgs/OpConsoleSSButtons.JPG)
 
-You can then select the "SEND" option to copy the button to the other OpCon environment!  The role for the button will default to "ocadm" but any existing categories will carry over if they exist in the destination OpCon environment.
+You can then select the "SUBMIT" option to copy the button or category of buttons to the destination OpCon environment!  The role for the button will default to "ocadm" but any existing categories will carry over if they exist in the destination OpCon environment (if the category does not exist in the destination environment, it will be set to none).
+
+There is also an option at the bottom of the screen to "FLIP ENVIRONMENTS" which changes your source -> destination and vice versa.  This is useful if you want to verify what buttons are now present in the other environment, or if you want to move buttons from the other environment over.
 
 # Disclaimer
 No Support and No Warranty are provided by SMA Technologies for this project and related material. The use of this project's files is on your own risk.
