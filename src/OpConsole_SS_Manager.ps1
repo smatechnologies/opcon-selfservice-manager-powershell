@@ -3,6 +3,7 @@ The purpose of this script is to move a button from one OpCon Self Service envir
 
 Future releases will add the ability create new categories and transform pieces of the buttons.
 
+v1.5 - Added button to check expressions in source.  Added Hide/Disable output.  Message fixes.
 v1.4 - Bug fixes, UX improvements and ability to flip environments
 v1.3 - Added ability to move category of buttons
 v1.2 - Bug fixes for category checks and added logging
@@ -45,12 +46,12 @@ function OpCon_Login($url,$user,$password)
     if($failed)
     {
         Write-Host ("Authentication to " + $url + " as user " + $user + " failed!") 
-        ("Authentication to " + $url + "as user " + $user + "failed!`n`n") | Out-File -FilePath ($global:path + "\SSmgr-" + (Get-Date -Format "MMddyyyy") + ".log") -Append
+        ((Get-Date).ToString() + " Authentication to " + $url + " as user " + $user + "failed!") | Out-File -FilePath ($global:path + "\SSmgr-" + (Get-Date -Format "MMddyyyy") + ".log") -Append
     }
     else 
     {
         Write-Host ("Authenticated to " + $url + " as user " + $user + "!`n") 
-        ("Authenticated to " + $url + "as user " + $user + "!`n`n") | Out-File -FilePath ($global:path + "\SSmgr-" + (Get-Date -Format "MMddyyyy") + ".log") -Append
+        ((Get-Date).ToString() + " Authenticated to " + $url + " as user " + $user + "!") | Out-File -FilePath ($global:path + "\SSmgr-" + (Get-Date -Format "MMddyyyy") + ".log") -Append
     }
 
     return $apiuser
@@ -171,8 +172,8 @@ function OpCon_CreateServiceRequest($url,$token,$name,$doc,$html,$details,$disab
 
     if($failed -ne "failed")
     { 
-        Write-Host ("Button: " + $servicerequest.name + "`nAdded to " + $global:destURL + "`n`n") 
-        ("Button: " + $servicerequest.name + "`nAdded to " + $global:destURL + "`n`n") | Out-File -FilePath ($global:path + "\SSmgr-" + (Get-Date -Format "MMddyyyy") + ".log") -Append
+        Write-Host ("Button: " + $servicerequest.name + "`nAdded to " + $global:destURL + "`n") 
+        ((Get-Date).ToString() + " Button: " + $servicerequest.name + "`n" + (Get-Date).ToString() + " Added to " + $global:destURL + "`n") | Out-File -FilePath ($global:path + "\SSmgr-" + (Get-Date -Format "MMddyyyy") + ".log") -Append
         
         [Terminal.Gui.MessageBox]::Query("Button "+ $servicerequest.name + " added to "+$url, "***Success***",@("Close") ) 
     }
@@ -267,6 +268,22 @@ function OpCon_GetServiceRequestCategoryCL($url,$token,$category,$id)
     }
 
     return $categories
+}
+
+#Function to check an expression
+function OpCon_PropertyExpression($url,$token,$expression)
+{
+    try
+    {
+        $result = Invoke-RestMethod -Method POST -Uri ($url + "/api/PropertyExpression") -Body (@{"Expression" = "$expression"} | ConvertTo-JSON) -Headers @{"authorization" = $token} -ContentType "application/json"
+    }
+    catch [Exception]
+    { [Terminal.Gui.MessageBox]::ErrorQuery("Failed", $_.Exception.Message ) }
+
+    if($result.status -eq "Success")
+    { ((Get-Date).ToString() + " Expression: " + $expression + "`n" + (Get-Date).ToString() + " Expression Result: " + $result.result + "`n") | Out-File -FilePath ($global:path + "\SSmgr-" + (Get-Date -Format "MMddyyyy") + ".log") -Append }
+
+    return $result.result
 }
 
 #Skips self signed certificates for OpCon API default setup
@@ -388,12 +405,17 @@ function BuildLoginDialog()
         if($DestinationPasswordTextfield.text.ToString() -eq "")
         { $DestinationPasswordTextfield.text = $SourcePasswordTextfield.text }
 
-        $global:destToken = "Token " + (OpCon_Login -url $DestinationURLTextfield.text.ToString() -user $DestinationUsernameTextfield.text.ToString() -password $DestinationPasswordTextfield.text.ToString()).id
-        $global:destURL = $DestinationURLTextfield.text.ToString()
+        # Fixes the need to put a destination if you have a single OpCon environment
+        if($DestinationURLTextfield.text.ToString() -ne "")
+        {
+            $global:destToken = "Token " + (OpCon_Login -url $DestinationURLTextfield.text.ToString() -user $DestinationUsernameTextfield.text.ToString() -password $DestinationPasswordTextfield.text.ToString()).id
+            $global:destURL = $DestinationURLTextfield.text.ToString()
+            $EnvButton.Visible = $true
+        }
 
         #Load content for environment frame
         $EnvContent.Text = "Source: " + $global:srcURL + "`nDestination: " + $global:destUrl
-        $EnvButton.Visible = $true
+        $ExprButton.Visible = $true
 
         if(($global:srcToken -ne "Token ") -and ($global:srcToken) -and ($global:destToken -ne "Token ") -and ($global:destToken))
         {
@@ -427,6 +449,41 @@ function BuildLoginDialog()
     [Terminal.Gui.Application]::Run($LoginDialog)
 }
 #endregion
+
+function CheckExpression()
+{
+    $ExpressionDialog = [Terminal.Gui.Dialog]::new()
+    $ExpressionDialog.Title = "Check Expressions in Source, [Escape] to close"
+
+    #Expression
+    $ExpressionLabel = [Terminal.Gui.Label]::new()
+    $ExpressionLabel.Height = 1
+    $ExpressionLabel.Width = 15
+    $ExpressionLabel.Text = "Expression"
+
+    $ExpressionTextfield = [Terminal.Gui.Textfield]::new()
+    $ExpressionTextfield.Width = 250
+    $ExpressionTextfield.X = [Terminal.Gui.Pos]::Right($ExpressionLabel)
+
+    $ExpressionDialog.Add($ExpressionLabel) 
+    $ExpressionDialog.Add($ExpressionTextfield)
+
+    # Submit button
+    $ExpressionSubmit = [Terminal.Gui.Button]::new()
+    $ExpressionSubmit.Text = "Check Expression"
+    $ExpressionSubmit.add_Clicked({ 
+        $validation = OpCon_PropertyExpression -url $global:srcUrl -token $global:srcToken -expression $ExpressionTextfield.text.ToString()
+        if($validation -eq "true")
+        { [Terminal.Gui.MessageBox]::Query("Result", "The expression was true!","OK") }
+        else 
+        { [Terminal.Gui.MessageBox]::Query("Result", "The expression was false!","OK") }
+    })
+    $ExpressionSubmit.Y = [Terminal.Gui.Pos]::Bottom($ExpressionTextfield)
+    $ExpressionSubmit.X = [Terminal.Gui.Pos]::Center()
+    $ExpressionDialog.Add($ExpressionSubmit)
+
+    [Terminal.Gui.Application]::Run($ExpressionDialog)
+}
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -648,12 +705,14 @@ else
     } )
     $MenuItemCategory.CheckType = "Checked"
     $MenuItemOpConDocs = [Terminal.Gui.MenuItem]::new("_OpCon Documentation", "", { Start-Process https://help.smatechnologies.com } )
-    $MenuItemOpConsole = [Terminal.Gui.MenuItem]::new("_About", "", { [Terminal.Gui.MessageBox]::Query("OpConsole Documentation", "Version 1.4`nWritten by Bruce Jernell`n`nCheck the project on github:`nhttps://tinyurl.com/135bucas", @("Close")) } )
-    $MenuItemExit = [Terminal.Gui.MenuItem]::new("_Exit (Ctrl + Q)", "", { Exit })
-    $MenuBarItemMenu = [Terminal.Gui.MenuBarItem]::new("Connection/s", @($MenuItemConnect))
-    $MenuBarItemDisplay = [Terminal.Gui.MenuBarItem]::new("Display Options (F2)", @($MenuItemButtons,$MenuItemCategory))
-    $MenuBarItemHelp = [Terminal.Gui.MenuBarItem]::new("Help",@($MenuItemOpConsole,$MenuItemOpConDocs,$MenuItemExit))
-    $MenuBar = [Terminal.Gui.MenuBar]::new(@($MenuBarItemDisplay,$MenuBarItemMenu,$MenuBarItemHelp))
+    $MenuItemExpression = [Terminal.Gui.MenuItem]::new("_Check Expression", "", { CheckExpression } )
+    $MenuItemOpConsole = [Terminal.Gui.MenuItem]::new("_About", "", { [Terminal.Gui.MessageBox]::Query("OpConsole Documentation", "Version 1.5`nWritten by Bruce Jernell`n`nCheck the project on github:`nhttps://tinyurl.com/135bucas", @("Close")) } )
+    $MenuItemExit = [Terminal.Gui.MenuItem]::new("_Exit", "", { Exit })
+    $MenuBarItemMenu = [Terminal.Gui.MenuBarItem]::new("Connection/s", @($MenuItemConnect,$MenuItemExpression))
+    $MenuBarItemDisplay = [Terminal.Gui.MenuBarItem]::new("Options (F2)", @($MenuItemButtons,$MenuItemCategory))
+    $MenuBarItemHelp = [Terminal.Gui.MenuBarItem]::new("Help",@($MenuItemOpConsole,$MenuItemOpConDocs))
+    $MenuBarItemExit = [Terminal.Gui.MenuBarItem]::new("Exit (Ctrl + Q)",@($MenuItemExit))
+    $MenuBar = [Terminal.Gui.MenuBar]::new(@($MenuBarItemDisplay,$MenuBarItemMenu,$MenuBarItemHelp,$MenuBarItemExit))
     $Window.Add($MenuBar)
 
     #Frame 1
@@ -700,20 +759,28 @@ else
         {
             if(($global:srcToken -ne "Token ") -and ($global:srcToken))
             {
-                if(($global:buttons[$ListView.SelectedItem].documentation).Length -gt 200)
-                { $buttonDocs = ($global:buttons[$ListView.SelectedItem].documentation).SubString(0,200) }
+                if(($global:buttons[$ListView.SelectedItem].documentation).Length -gt 150)
+                { $buttonDocs = ($global:buttons[$ListView.SelectedItem].documentation).SubString(0,150) }
                 else 
                 { $buttonDocs = $global:buttons[$ListView.SelectedItem].documentation }
 
-                if(($global:buttons[$ListView.SelectedItem].html).Length -gt 200)
-                { $buttonHTML = ($global:buttons[$ListView.SelectedItem].html).SubString(0,200) }
+                if(($global:buttons[$ListView.SelectedItem].html).Length -gt 150)
+                { $buttonHTML = ($global:buttons[$ListView.SelectedItem].html).SubString(0,150) }
                 else 
                 { $buttonHTML = $global:buttons[$ListView.SelectedItem].html }
 
-                $Content2.Text = "NAME: " + $global:buttons[$ListView.SelectedItem].name + 
-                                "`n`nDOCUMENTATION: " + $buttonDocs +
-                                "`n`nCATEGORY: " + $global:buttons[$ListView.SelectedItem].serviceRequestCategory.name + 
-                                "`n`nHTML: " + $buttonHTML
+                if($global:buttons[$ListView.SelectedItem].hideRule)
+                { $hideRule = $global:buttons[$ListView.SelectedItem].hideRule }
+
+                if($global:buttons[$ListView.SelectedItem].disableRule)
+                { $disableRule = $global:buttons[$ListView.SelectedItem].disableRule }
+
+                $Content2.Text = "NAME = " + $global:buttons[$ListView.SelectedItem].name + 
+                                "`nDOCUMENTATION = " + $buttonDocs +
+                                "`nCATEGORY = " + $global:buttons[$ListView.SelectedItem].serviceRequestCategory.name + 
+                                "`nHTML = `n" + $buttonHTML + 
+                                "`nDISABLE RULE = " + $disableRule + 
+                                "`nHIDE RULE = " + $hideRule
                 
                 $buttonSpecific = OpCon_GetServiceRequest -url $global:srcUrl -token $global:srcToken -id $global:buttons[$ListView.SelectedItem].id
                 if($buttonSpecific.roles.Count -eq 0)
@@ -739,8 +806,8 @@ else
             {
                 $buttonsByCategory = ($global:buttons).Where({ $_.serviceRequestCategory.name -Match $global:categories[$ListView.SelectedItem].name })
 
-                $Content2.Text = "CATEGORY: " + $global:categories[$ListView.SelectedItem].name + 
-                                "`n`nCOLOR: " + $global:categories[$ListView.SelectedItem].color
+                $Content2.Text = "CATEGORY =  " + $global:categories[$ListView.SelectedItem].name + 
+                                "`nCOLOR = " + $global:categories[$ListView.SelectedItem].color
 
                 if($buttonsByCategory.Count -eq 0)
                 { $CatButtonListView.SetSource( @() ) }
@@ -888,11 +955,23 @@ else
                 $CatButtonListView.SetSource(@())
     })
     $EnvButton.Y = [Terminal.Gui.Pos]::Bottom($EnvContent)
-    $EnvButton.X = [Terminal.Gui.Pos]::Center()
     $EnvButton.Visible = $false
     $EnvFrame.Add($EnvButton)
     #endregion
 
+    #region expression button
+    $ExprButton = [Terminal.Gui.Button]::new()
+    $ExprButton.Text = "CHECK EXPRESSION"
+    $ExprButton.add_Clicked({ 
+        CheckExpression
+    })
+    $ExprButton.Y = [Terminal.Gui.Pos]::Bottom($EnvContent)
+    $ExprButton.X = [Terminal.Gui.Pos]::Right($EnvButton)
+    $ExprButton.Visible = $false
+    $EnvFrame.Add($ExprButton)
+    #endregion
+
     BuildLoginDialog
+
     [Terminal.Gui.Application]::Run()
 }
