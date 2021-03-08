@@ -6,6 +6,7 @@ This terminal program is designed to help move Self Service buttons between OpCo
 # Prerequisites
 * <a href="https://github.com/PowerShell/PowerShell/releases">Powershell 7+</a>
 * Powershell Module - Microsoft.PowerShell.ConsoleGuiTools 
+* <a href="https://github.com/SMATechnologies/opcon-rest-api-client-powershell">OpCon Powershell Module</a>
 * OpCon environments on Release 17+
 * OpCon license with access to OpCon API
 
@@ -17,23 +18,21 @@ Install-Module Microsoft.PowerShell.ConsoleGuiTools
 
 Run the program in OpCon or from a command line like this:
 ```
-pwsh OpConsole_SS_Manager.ps1 -cli -srcToken "1234" -srcURL "https://<server>:<port>" -destToken "5678" -destURL "https://<server>:<port>" -button "My Button"
+pwsh OpConsole.ps1 -cli -srcToken "1234" -srcURL "https://<server>:<port>" -destToken "5678" -destURL "https://<server>:<port>" -button "My Button"
 ```
 
 Launch the terminal gui like this:
 ```
-pwsh OpConsole_SS_Manager.ps1
+pwsh OpConsole.ps1
 ```
 
-There will be an initial login window so that you can authenticate to your OpCon environments.
+Once launched, go to the Connection/s -> Select Environment area to select an environment to authenticate too or to add a new one.
 ![Login](documentation/imgs/OpConsoleSSLogin.JPG)
 
-After launching select Buttons or Categories to display the items in your "source" environment that you have access to move:
+After authenticating select Navigation -> Manage Self Service.  Choose an option from the Self Service menu, select Buttons or Categories to display the items in your active environment (that your role has access too):
 ![Buttons](documentation/imgs/OpConsoleSSButtons.JPG)
 
 You can then select the "SUBMIT" option to copy the button or category of buttons to the destination OpCon environment!  The role for the button will default to "ocadm" but any existing categories will carry over if they exist in the destination OpCon environment (if the category does not exist in the destination environment, it will be set to none).
-
-There is also an option at the bottom of the screen to "FLIP ENVIRONMENTS" which changes your source -> destination and vice versa.  This is useful if you want to verify what buttons are now present in the other environment, or if you want to move buttons from the other environment over.
 
 # Disclaimer
 No Support and No Warranty are provided by SMA Technologies for this project and related material. The use of this project's files is on your own risk.
