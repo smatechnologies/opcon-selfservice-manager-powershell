@@ -1,5 +1,5 @@
 # OpConsole Self Service Manager
-This terminal program is designed to help move Self Service buttons between OpCon environments.  Future releases will include options to "transform" certain fields like Roles/Category or even create a Category in the destination environment.
+This terminal program is designed to help move manage OpCon environments from a command line.
 
 ![OpConsole](documentation/imgs/OpConsoleSS.JPG)
 
