@@ -182,12 +182,13 @@ function OpConsole_Self_Service()
                             "`nDISABLE RULE = " + $disableRule + 
                             "`nHIDE RULE = " + $hideRule
             
-            if($global:buttons[$ListView.SelectedItem].roles)
-            {
-                if($global:buttons[$ListView.SelectedItem].roles.Count -eq 1)
-                { $CatButtonListView.SetSource( @($global:buttons[$ListView.SelectedItem].roles.name) ) }
+            $buttonDetails = OpCon_GetServiceRequest -url $global:activeOpCon.url -token $global:activeOpCon.externalToken -id $global:buttons[$ListView.SelectedItem].id    
+            if($buttonDetails.roles)
+            {  
+                if($buttonDetails.roles.Count -eq 1)
+                { $CatButtonListView.SetSource( @($buttonDetails.roles.name) ) }
                 else
-                { $CatButtonListView.SetSource( ($global:buttons[$ListView.SelectedItem].roles.name | Sort-Object) ) } 
+                { $CatButtonListView.SetSource( ($buttonDetails.roles.name | Sort-Object) ) } 
             }
             else 
             { $CatButtonListView.SetSource( @() ) }
@@ -299,7 +300,7 @@ function OpConsole_Self_Service()
         # Make sure user hits OK before making change
         if($confirmSubmission -eq 0)
         { 
-            $sourceButton = $global:buttons[$ListView.SelectedItem]
+            $sourceButton = OpCon_GetServiceRequest -url $global:activeOpCon.url -token $global:activeOpCon.externalToken -id $global:buttons[$ListView.SelectedItem].id
 
             # Default to ocadm role in destination OpCon
             $sourceButton.roles = @(@{ "id" = 0;"name"="ocadm"})
@@ -348,7 +349,7 @@ function OpConsole_Self_Service()
 
     # Impex Buttons
     $ImportButton = [Terminal.Gui.Button]::new()
-    $ImportButton.Text = "IMPORT"
+    $ImportButton.Text = "IMPORT FROM FILE"
     $ImportButton.add_Clicked({ 
         $ListView.SetSource(@())
         $MenuItemCategory.Checked = $false
@@ -374,7 +375,7 @@ function OpConsole_Self_Service()
     $Frame1.Add($ImportButton)
 
     $ExportButton = [Terminal.Gui.Button]::new()
-    $ExportButton.Text = "EXPORT"
+    $ExportButton.Text = "EXPORT TO FILE"
     $ExportButton.add_Clicked({ 
         $ExportDialog = [Terminal.Gui.SaveDialog]::new("Export Items", "")
         $ExportDialog.NameFieldLabel = "Name:"

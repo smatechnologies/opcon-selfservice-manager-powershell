@@ -68,7 +68,7 @@ function OpConsole_Login()
     $URLLabel = [Terminal.Gui.Label]::new()
     $URLLabel.Height = 1
     $URLLabel.Width = 45
-    $URLLabel.Text = "*URL (https://<server>:<port>)"
+    $URLLabel.Text = "URL (https://<server>:<port>)"
     $URLLabel.Y = [Terminal.Gui.Pos]::Bottom($TokenLabel)
  
     $URLTextfield = [Terminal.Gui.Textfield]::new()
@@ -115,7 +115,7 @@ function OpConsole_Login()
             # Close the window
             [Terminal.Gui.Application]::RequestStop()
         }
-        elseif($null -ne $result) 
+        else 
         { [Terminal.Gui.MessageBox]::ErrorQuery("Error - Not Authenticated to OpCon", "Bad user/password/token or url") }
     })
     $LoginSubmit.Y = [Terminal.Gui.Pos]::Bottom($URLLabel)
@@ -219,13 +219,16 @@ function OpConsole_ReLogin()
         if(!($TokenTextfield.text.ToString() -ne "") -and (($global:opconLogins[$ConnectionList.SelectedItem].username) -and ($PasswordTextfield.text.ToString())))
         { 
             $result = OpCon_Login -url $global:opconLogins[$ConnectionList.SelectedItem].url -user $global:opconLogins[$ConnectionList.SelectedItem].username -password $PasswordTextfield.text.ToString()
-            $token = ($result).id 
+            if($null -eq $result)
+            { [Terminal.Gui.MessageBox]::ErrorQuery("Error - Not Authenticated to OpCon", "Bad user/password/url") }
+            else 
+            { $token = ($result).id }
         }
         elseif($TokenTextfield.text.ToString() -ne "")
         { $token = $TokenTextfield.text.ToString() }
         
         # If successful login
-        if($token -ne "")
+        if(($token -ne "") -and ($null -ne $result))
         {
             $global:opconLogins[$ConnectionList.SelectedItem].externalToken = "Token " + $token
             $global:opconLogins[$ConnectionList.SelectedItem].lastLogin = (Get-Date).ToString()
@@ -340,13 +343,16 @@ function OpConsole_ReloginAlt()
         if(!($TokenTextfield.text.ToString() -ne "") -and (($global:altOpConLogin.username) -and ($PasswordTextfield.text.ToString())))
         { 
             $result = OpCon_Login -url $global:altOpConLogin.url -user $global:altOpConLogin.username -password $PasswordTextfield.text.ToString()
-            $token = ($result).id 
+            if($null -eq $result)
+            { [Terminal.Gui.MessageBox]::ErrorQuery("Error - Not Authenticated to OpCon", "Bad user/password/url") }
+            else 
+            { $token = ($result).id }
         }
         elseif($TokenTextfield.text.ToString() -ne "")
         { $token = $TokenTextfield.text.ToString() }
         
         # If successful login
-        if($token -ne "")
+        if(($token -ne "") -and ($null -ne $result))
         {
             $global:altOpConLogin.externalToken = "Token " + $token
             $global:altOpConLogin.lastLogin = (Get-Date).ToString()
@@ -412,6 +418,33 @@ function OpConsole_Select_AltEnvironment()
     [Terminal.Gui.Application]::Run($AltEnvironment)   
 }
 
+function OpConsole_Import_Logins()
+{
+    $global:opconLogins = [System.Collections.ArrayList]@()
+    $global:opconLogins.Add( [PSCustomObject]@{
+        "name"="Add New";
+        "user"="";
+        "externalToken"="";
+        "url"="";
+        "lastLogin"="";
+        "expires"=""
+    } ) | Out-Null
+
+    if(Test-Path ($global:path + "\logins.json"))
+    {
+        $readLoginFile = Get-Content ($global:path + "\logins.json") | Out-String | ConvertFrom-Json -Depth 3
+        if($readLoginFile.Count -gt 1)
+        { 
+            $readLoginFile | ForEach-Object{
+                if(($_.name -ne "Add New") -and ($_.name))
+                { $global:opconLogins.Add( $_ ) | Out-Null }
+            }
+        }
+    }
+
+    $global:opconLogins | ConvertTo-Json -Depth 3 -AsArray | Out-String | Out-File ($global:path + "\logins.json") -Force
+}
+
 function OpConsole_Select_Environment()
 {
     # Application
@@ -424,7 +457,7 @@ function OpConsole_Select_Environment()
     [Terminal.Gui.Application]::Top.Add($Window)
 
     BuildMenu -window $Window
-
+   
     #Connections
     $ConnectionFrame = [Terminal.Gui.FrameView]::new()
     $ConnectionFrame.Width = [Terminal.Gui.Dim]::Percent(35)
@@ -549,5 +582,92 @@ function OpConsole_Select_Environment()
     else 
     { $ConnectionList.SetSource($global:opconLogins.name) }
 
+    [Terminal.Gui.Application]::Run()
+}
+
+# Builds top navigation menu
+function BuildMenu($Window)
+{
+    $MenuItemHome = [Terminal.Gui.MenuItem]::new("_Home", "", {             
+        # Close the window
+        $Window.RemoveAll()
+
+        # Application
+        $Window = [Terminal.Gui.Window]::new()
+        $Window.Title = "OpConsole (v" + $global:version + ")"
+        $Window.add_KeyPress({ param($arg) 
+            if($arg.KeyEvent.Key.ToString() -eq "F2")
+            { $global:MenuBar.OpenMenu() }
+        })
+        [Terminal.Gui.Application]::Top.Add($Window)
+        
+        OpConsole -Window $window
+    })
+    $MenuItemCheckExp = [Terminal.Gui.MenuItem]::new("_Check Expression", "", { OpConsole_CheckExpression })
+    $MenuItemExit = [Terminal.Gui.MenuItem]::new("_Exit", "", { Exit })
+    $MenuItemConnect = [Terminal.Gui.MenuItem]::new("_Add Login", "", { 
+        OpConsole_Login
+        OpConsole_Select_Environment 
+    })
+    $MenuItemSelectEnv = [Terminal.Gui.MenuItem]::new("_Select Environment", "", {             
+        # Close the window
+        $Window.RemoveAll()
+
+        OpConsole_Select_Environment 
+    } )
+    $MenuItemCustom = [Terminal.Gui.MenuItem]::new("_Custom Module", "", { 
+        $CustomDialog = [Terminal.Gui.OpenDialog]::new("Select Custom Module", "")
+        $CustomDialog.NameFieldLabel = "Name:"
+        [Terminal.Gui.Application]::Run($CustomDialog)
+
+        # Makes sure the dialog was not closed
+        if(!$CustomDialog.Canceled)
+        { 
+            # Imports the custom module functions
+            Import-Module ( $CustomDialog.Filepath.ToString() ) -Force -Verbose
+            Write-Host (Get-Date).ToString()" Imported Module"$CustomDialog.Filepath.ToString()
+            
+            # Starts custom module
+            OpConsole_Custom_Start
+
+            # Unloads module functions
+            Remove-Module -Name ( (Split-Path $CustomDialog.Filepath.ToString() -leaf -Resolve).Replace(".psm1","") )
+            Write-Host (Get-Date).ToString()" Removed Module"( (Split-Path $CustomDialog.Filepath.ToString() -leaf -Resolve).Replace(".psm1","") )
+        } 
+    })
+    $MenuItemSelfService = [Terminal.Gui.MenuItem]::new("_Manage Self Service", "", { 
+        Import-Module ($global:path + "\OpConsole_Self_Service_Module.psm1") -Force
+        OpConsole_Self_Service
+    } )
+    $MenuItemOpConDocs = [Terminal.Gui.MenuItem]::new("_OpCon Documentation", "", { Start-Process https://help.smatechnologies.com } )
+    $MenuItemOpConsole = [Terminal.Gui.MenuItem]::new("_About", "", { [Terminal.Gui.MessageBox]::Query("About OpConsole", "Version " + $version + "`nWritten by Bruce Jernell`n`nCheck the project on github:`nhttps://tinyurl.com/135bucas", @("Close")) } )
+    
+    $MenuBarItemNavigation = [Terminal.Gui.MenuBarItem]::new("Navigation (F2)",@($MenuItemHome,$MenuItemCheckExp,$MenuItemSelfService,$MenuItemCustom,$MenuItemExit))
+    $MenuBarItemLogins = [Terminal.Gui.MenuBarItem]::new("Connection/s", @($MenuItemSelectEnv,$MenuItemConnect))
+    $MenuBarItemHelp = [Terminal.Gui.MenuBarItem]::new("Help",@($MenuItemOpConsole,$MenuItemOpConDocs))
+
+    $global:MenuBar = [Terminal.Gui.MenuBar]::new(@($MenuBarItemNavigation,$MenuBarItemLogins,$MenuBarItemHelp))
+    $Window.Add($global:MenuBar)
+}
+
+function OpConsole($Window)
+{
+    # Builds buttons/menu for start screen
+    BuildMenu -Window $Window  
+
+    $StartScreen = [Terminal.Gui.Label]::new()
+    $StartScreen.Height = 20
+    $StartScreen.Width = 60
+    $StartScreen.Y = [Terminal.Gui.Pos]::Bottom($global:MenuBar)
+    $StartScreen.X = [Terminal.Gui.Pos]::Center()
+    $StartScreen.Text = "`n`n`n`n`n
+                       Welcome to`n`n
+      O   PPPP  CCC   O   N   N SSS    O   L    EEEE
+    O   O P  P C    O   O N N N S    O   O L    E
+    O   O PPPP C    O   O N  NN  SS  O   O L    EEEE
+    O   O P    C    O   O N   N    S O   O L    E
+      O   P     CCC   O   N   N SSS    O   LLLL EEEE"
+    
+    $Window.Add($StartScreen)
     [Terminal.Gui.Application]::Run()
 }
