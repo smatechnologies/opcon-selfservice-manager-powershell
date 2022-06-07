@@ -1,8 +1,6 @@
 # OpConsole Self Service Manager
 This terminal program is designed to help move manage OpCon environments from a command line.
 
-![OpConsole](documentation/imgs/OpConsoleSS.JPG)
-
 # Prerequisites
 * <a href="https://github.com/PowerShell/PowerShell/releases">Powershell 7+</a>
 * Powershell Module - Microsoft.PowerShell.ConsoleGuiTools 
@@ -18,12 +16,12 @@ Install-Module Microsoft.PowerShell.ConsoleGuiTools
 
 Run the program in OpCon or from a command line like this:
 ```
-pwsh OpConsole.ps1 -cli -OpConModule "C:\OpConModule.psm1" -srcToken "1234" -srcURL "https://<server>:<port>" -destToken "5678" -destURL "https://<server>:<port>" -button "My Button"
+pwsh OpConsole_SS_Mgr.ps1 -cli -OpConModule "C:\OpConModule.psm1" -srcToken "1234567890" -srcURL "https://<server>:<port>" -destToken "5678901234" -destURL "https://<server>:<port>" -button "My Button"
 ```
 
 Launch the terminal gui like this:
 ```
-pwsh OpConsole.ps1 -OpConModule "C:\OpConModule.psm1"
+pwsh OpConsole_SS_Mgr.ps1 -OpConModule "C:\OpConModule.psm1"
 ```
 
 Once launched, go to the Connection/s -> Select Environment area to select an environment to authenticate too or to add a new one.
