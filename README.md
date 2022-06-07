@@ -5,7 +5,7 @@ This terminal program is designed to help manage Self Service buttons between Op
 * <a href="https://github.com/PowerShell/PowerShell/releases">Powershell 7+</a>
 * Powershell Module - Microsoft.PowerShell.ConsoleGuiTools 
 * <a href="https://github.com/SMATechnologies/opcon-rest-api-client-powershell">OpCon Powershell Module</a>
-* OpCon environments on Release 17+
+* OpCon environments on Release 19+
 * OpCon license with access to OpCon API
 
 # Instructions
