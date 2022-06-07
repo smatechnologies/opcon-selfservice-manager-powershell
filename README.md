@@ -1,5 +1,5 @@
 # OpConsole Self Service Manager
-This terminal program is designed to help move manage OpCon environments from a command line.
+This terminal program is designed to help manage Self Service buttons between OpCon environments from a command line.
 
 # Prerequisites
 * <a href="https://github.com/PowerShell/PowerShell/releases">Powershell 7+</a>
