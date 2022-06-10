@@ -24,7 +24,6 @@ pwsh OpCon_SS_Mgr.ps1
 ```
 
 Once launched, go to the Connection/s -> Select Environment area to select an environment to authenticate too or to add a new one.
-![Login](documentation/imgs/OpConsoleSSLogin.JPG)
 
 After authenticating select Navigation -> Manage Self Service.  Choose an option from the Self Service menu, select Buttons or Categories to display the items in your active environment (that your role has access too):
 ![Buttons](documentation/imgs/OpConsoleSSButtons.JPG)
