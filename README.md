@@ -15,12 +15,12 @@ Install-Module Microsoft.PowerShell.ConsoleGuiTools
 
 Run the program in OpCon or from a command line like this:
 ```
-pwsh OpConsole_SS_Mgr.ps1 -cli -srcToken "1234567890" -srcURL "https://<server>:<port>" -destToken "5678901234" -destURL "https://<server>:<port>" -button "My Button"
+pwsh OpCon_SS_Mgr.ps1 -cli -srcToken "1234567890" -srcURL "https://<server>:<port>" -destToken "5678901234" -destURL "https://<server>:<port>" -button "My Button"
 ```
 
 Launch the terminal gui like this:
 ```
-pwsh OpConsole_SS_Mgr.ps1
+pwsh OpCon_SS_Mgr.ps1
 ```
 
 Once launched, go to the Connection/s -> Select Environment area to select an environment to authenticate too or to add a new one.
